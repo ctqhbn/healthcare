@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Người dùng{% endblock %}
+{% block content %}
+<h3>Danh sách Người dùng</h3>
+<a class="btn btn-success mb-2" href="#">Thêm mới</a>
+<table class="table table-bordered">
+    <tr><th>Mã</th><th>Tên</th><th>Vai trò</th><th>Đơn vị</th><th>Hành động</th></tr>
+    {% for u in users %}
+    <tr>
+        <td>{{ u.code }}</td>
+        <td>{{ u.name }}</td>
+        <td>{{ u.role }}</td>
+        <td>{{ u.facility.name }}</td>
+        <td>
+            <a class="btn btn-sm btn-primary" href="#">Sửa</a>
+            <a class="btn btn-sm btn-danger" href="#">Xóa</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
