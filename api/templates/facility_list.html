@@ -1,20 +1,146 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Quản lý Cơ sở Y tế{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+
 <h3>Danh sách Cơ sở Y tế</h3>
-<a class="btn btn-success mb-2" href="#">Thêm mới</a>
-<table class="table table-bordered">
-    <tr><th>Mã</th><th>Tên</th><th>Địa chỉ</th><th>Hành động</th></tr>
-    {% for f in facilities %}
-    <tr>
-        <td>{{ f.code }}</td>
-        <td>{{ f.name }}</td>
-        <td>{{ f.address }}</td>
-        <td>
-            <a class="btn btn-sm btn-primary" href="#">Sửa</a>
-            <a class="btn btn-sm btn-danger" href="#">Xóa</a>
-        </td>
-    </tr>
-    {% endfor %}
+
+<button class="btn btn-success mb-3" onclick="openCreateModal()">Thêm mới</button>
+
+<table id="facilityTable" class="table table-bordered table-striped">
+    <thead>
+        <tr>
+            <th>Mã</th>
+            <th>Tên</th>
+            <th>Địa chỉ</th>
+            <th>Hành động</th>
+        </tr>
+    </thead>
+    <tbody id="facilityBody">
+        {% for f in facilities %}
+        <tr id="row-{{ f.id }}">
+            <td>{{ f.code }}</td>
+            <td>{{ f.name }}</td>
+            <td>{{ f.address }}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="openEditModal({{ f.id }}, '{{ f.code }}', '{{ f.name }}', `{{ f.address|escapejs }}`)">Sửa</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteFacility({{ f.id }})">Xóa</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
+
+<!-- Modal thêm/sửa -->
+<div class="modal fade" id="facilityModal" tabindex="-1" aria-labelledby="facilityModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="facilityForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="facilityModalLabel">Thêm cơ sở y tế</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="facility-id">
+          <div class="mb-3">
+            <label for="facility-code" class="form-label">Mã</label>
+            <input type="text" class="form-control" id="facility-code" required>
+          </div>
+          <div class="mb-3">
+            <label for="facility-name" class="form-label">Tên</label>
+            <input type="text" class="form-control" id="facility-name" required>
+          </div>
+          <div class="mb-3">
+            <label for="facility-address" class="form-label">Địa chỉ</label>
+            <textarea class="form-control" id="facility-address" required></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Lưu</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+$(document).ready(function () {
+    $('#facilityTable').DataTable({
+        language: {
+            search: "Tìm kiếm:",
+            lengthMenu: "Hiển thị _MENU_ dòng",
+            info: "Trang _PAGE_ / _PAGES_",
+            paginate: {
+                previous: "Trước",
+                next: "Sau"
+            }
+        }
+    });
+
+    $('#facilityForm').on('submit', function (e) {
+        e.preventDefault();
+
+        const id = $('#facility-id').val();
+        const code = $('#facility-code').val();
+        const name = $('#facility-name').val();
+        const address = $('#facility-address').val();
+        const data = JSON.stringify({ code, name, address });
+
+        const url = id
+            ? `/api/facilities/update/${id}/`
+            : `/api/facilities/create/`;
+
+        $.ajax({
+            url: url,
+            type: 'POST',
+            data: data,
+            contentType: 'application/json',
+            success: function (res) {
+                location.reload();
+            },
+            error: function (xhr) {
+                alert('Lỗi: ' + (xhr.responseJSON?.error || 'Không xác định'));
+            }
+        });
+    });
+});
+
+function openCreateModal() {
+    $('#facilityForm')[0].reset();
+    $('#facility-id').val('');
+    $('#facilityModalLabel').text('Thêm cơ sở y tế');
+    new bootstrap.Modal(document.getElementById('facilityModal')).show();
+}
+
+function openEditModal(id, code, name, address) {
+    $('#facility-id').val(id);
+    $('#facility-code').val(code);
+    $('#facility-name').val(name);
+    $('#facility-address').val(address);
+    $('#facilityModalLabel').text('Cập nhật cơ sở y tế');
+    new bootstrap.Modal(document.getElementById('facilityModal')).show();
+}
+
+function deleteFacility(id) {
+    if (!confirm("Bạn có chắc chắn muốn xóa?")) return;
+
+    $.ajax({
+        url: `/api/facilities/delete/${id}/`,
+        type: 'POST',
+        success: function (res) {
+            $('#row-' + id).remove();
+        },
+        error: function (xhr) {
+            alert('Lỗi: ' + (xhr.responseJSON?.error || 'Không xác định'));
+        }
+    });
+}
+</script>
 {% endblock %}

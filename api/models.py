@@ -30,6 +30,15 @@ class User(AbstractUser):
         return self.username
 
 
+class PatientDocument(models.Model):
+    patient = models.ForeignKey("Patient", on_delete=models.CASCADE, related_name="documents")
+    file = models.FileField(upload_to='patient_documents/')
+    original_filename = models.CharField(max_length=255, blank=True, null=True)  # thêm trường này
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Document for {self.patient.name}"
+
 
 class Patient(models.Model):
     IDENTIFIER_CHOICES = [
@@ -42,13 +51,13 @@ class Patient(models.Model):
     identifier = models.CharField(max_length=100, unique=True)
     name = models.CharField(max_length=255)
     contact_info = models.TextField(blank=True, null=True)
-    identity_documents = models.TextField(blank=True, null=True)
     gender = models.CharField(max_length=10, choices=[('male', 'Male'), ('female', 'Female'), ('other', 'Other')])
     created_by_facility = models.ForeignKey(MedicalFacility, on_delete=models.SET_NULL, null=True, related_name="patients")
-    activity_history = models.JSONField(default=list, blank=True)  # list of update timestamps
+    activity_history = models.JSONField(default=list, blank=True)
 
     def __str__(self):
         return self.name
+
 
 
 class DiagnosisCatalog(models.Model):
