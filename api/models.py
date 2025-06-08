@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 
 from healthcare import settings
+import uuid
 
 # Create your models here.
 
@@ -94,6 +95,7 @@ class DiagnosisRecord(models.Model):
     department = models.CharField(max_length=200)    # khoa
     examination_place = models.CharField(max_length=200)  # nơi khám
     examination_time = models.DateTimeField()        # thời gian khám
+    public_token = models.CharField(max_length=100, null=True, blank=True, unique=True)
 
     doctor = models.ForeignKey(
         User,
@@ -105,8 +107,11 @@ class DiagnosisRecord(models.Model):
     )
 
     diagnosis_result = models.TextField()  # kết quả chuẩn đoán
-
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def generate_public_token(self):
+        self.public_token = uuid.uuid4().hex
+        self.save()
 
     def __str__(self):
         return f'Chuẩn đoán {self.patient_code} - {self.patient_name} ({self.examination_time.date()})'

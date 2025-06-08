@@ -7,7 +7,7 @@ from django.db import transaction
 
 from api.decorators import admin_required
 from api.models import DiagnosisDocument, DiagnosisRecord, MedicalFacility, Patient, PatientDocument
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.contrib.auth.hashers import make_password
 from django.views.decorators.http import require_GET
 from django.db.models import Count
@@ -459,3 +459,38 @@ def diagnosis_report(request):
     }
 
     return render(request, 'diagnosis_report.html', context)
+
+
+@csrf_exempt
+def generate_public_link(request, id):
+    try:
+        record = DiagnosisRecord.objects.get(id=id)
+        record.generate_public_token()
+        public_url = request.build_absolute_uri(f'/diagnosis/public/{record.public_token}/')
+        return JsonResponse({'public_url': public_url})
+    except DiagnosisRecord.DoesNotExist:
+        return JsonResponse({'error': 'Không tìm thấy bản ghi'}, status=404)
+
+
+def diagnosis_public_view(request, token):
+    try:
+        record = DiagnosisRecord.objects.get(public_token=token)
+        documents = []
+
+        for d in record.documents.all():  # giả sử bạn có liên kết Document model
+            file_url = d.file.url
+            is_image = file_url.lower().endswith(('.jpg', '.jpeg', '.png'))
+
+            documents.append({
+                'file_url': file_url,
+                'file_name': d.file.name,
+                'is_image': is_image
+            })
+
+        context = {
+            'record': record,
+            'documents': documents
+        }
+        return render(request, 'diagnosis_public.html', context)
+    except DiagnosisRecord.DoesNotExist:
+        return HttpResponse("Link không hợp lệ hoặc đã bị thu hồi.", status=404)

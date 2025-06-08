@@ -58,6 +58,7 @@
             <td>
                 <button class="btn btn-sm btn-warning" onclick="openEditForm({{ d.id }})">Sửa</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteDiagnosis({{ d.id }})">Xóa</button>
+                <button class="btn btn-sm btn-info" onclick="generatePublicLink({{ d.id }})">Tạo link tra cứu</button>
             </td>
         </tr>
     {% endfor %}
@@ -271,6 +272,7 @@
                         <td>${d.doctor_name}</td>
                         <td>
                             <button class="btn btn-sm btn-warning" onclick="openEditForm(${d.id})">Sửa</button>
+                            <button class="btn btn-sm btn-info" onclick="generatePublicLink(${d.id})">Tạo link tra cứu</button>
                             <button class="btn btn-sm btn-danger" onclick="deleteDiagnosis(${d.id})">Xóa</button>
                         </td>
                     </tr>
@@ -280,6 +282,17 @@
         });
     }
 
+    function generatePublicLink(id) {
+        $.post(`/api/diagnosis/generate_public_link/${id}/`, function (data) {
+            if (data.public_url) {
+                prompt('Link tra cứu (chia sẻ cho người dùng):', data.public_url);
+            } else {
+                alert('Không thể tạo link');
+            }
+        }).fail(function(xhr){
+            alert('Lỗi khi tạo link');
+        });
+    }
 
     function resetFilter() {
         $('#startDate').val('');

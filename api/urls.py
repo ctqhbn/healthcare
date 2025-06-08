@@ -29,4 +29,8 @@ urlpatterns = [
 
     path('api/get_doctors_by_patient/<int:patient_id>/', get_doctors_by_patient, name='get_doctors_by_patient'),
     path('diagnosis_report/', diagnosis_report, name='diagnosis_report'),
+
+    path('api/diagnosis/generate_public_link/<int:id>/', generate_public_link, name='generate_public_link'),
+    path('diagnosis/public/<str:token>/', diagnosis_public_view, name='diagnosis_public_view'),
+
 ]
