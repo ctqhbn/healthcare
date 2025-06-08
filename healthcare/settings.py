@@ -26,6 +26,9 @@ SECRET_KEY = 'django-insecure-+al$let**t)#(m9xs^@opctrvwxb#zrii5bijk=g9x9zx6xtbz
 DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.up.railway.app'
+]
 
 
 MEDIA_URL = '/media/'
