@@ -4,12 +4,12 @@
 {% block content %}
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 
-  <h3>Danh sách Bệnh nhân</h3>
+<h3>Danh sách Bệnh nhân</h3>
 
-  <button class="btn btn-success mb-3" onclick="openCreateForm()">+ Thêm Bệnh nhân</button>
+<button class="btn btn-success mb-3" onclick="openCreateForm()">+ Thêm Bệnh nhân</button>
 
-  <table id="patientTable" class="table table-bordered table-striped">
-    <thead>
+<table id="patientTable" class="table table-bordered table-striped">
+  <thead>
     <tr>
       <th>ID</th>
       <th>Loại định danh</th>
@@ -20,8 +20,8 @@
       <th>Cơ sở tạo</th>
       <th>Thao tác</th>
     </tr>
-    </thead>
-    <tbody>
+  </thead>
+  <tbody>
     {% for p in patients %}
       <tr data-id="{{ p.id }}">
         <td>{{ p.id }}</td>
@@ -37,9 +37,8 @@
         </td>
       </tr>
     {% endfor %}
-    </tbody>
-  </table>
-</div>
+  </tbody>
+</table>
 
 <!-- Modal -->
 <div class="modal fade" id="patientModal" tabindex="-1" aria-hidden="true">
@@ -52,6 +51,8 @@
         </div>
         <div class="modal-body">
           <input type="hidden" id="patientId">
+          <input type="hidden" id="delete_documents" name="delete_documents">
+
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label">Loại định danh</label>
@@ -126,66 +127,87 @@
             }
         }
     });
-  function openCreateForm() {
-    $('#patientForm')[0].reset();
-    $('#patientId').val('');
-  }
 
-  function openEditForm(id) {
-    $.get(`/api/patients/${id}/`, function (data) {
-        $('#patient-documents-list').empty();
+    function openCreateForm() {
+        $('#patientForm')[0].reset();
+        $('#patientId').val('');
+        $('#delete_documents').val('');
+        $('#patient-documents-list').empty().append('<li>Chưa có tài liệu đính kèm</li>');
+        $('#patientModal').modal('show');
+    }
 
-      $('#patientId').val(data.id);
-      $('#identifier_type').val(data.identifier_type);
-      $('#identifier').val(data.identifier);
-      $('#name').val(data.name);
-      $('#contact_info').val(data.contact_info);
-      $('#gender').val(data.gender);
-      $('#patient-facility').val(data.created_by_facility);
-      if (data.documents && data.documents.length > 0) {
-        data.documents.forEach(doc => {
-            const fileLink = `<a href="${doc.file_url}" target="_blank">Tệp ${doc.file_name}</a>`;
-            $('#patient-documents-list').append(`<li>${fileLink}</li>`);
+    function openEditForm(id) {
+        $.get(`/api/patients/${id}/`, function (data) {
+            $('#patientForm')[0].reset();
+            $('#delete_documents').val('');
+            $('#patient-documents-list').empty();
+
+            $('#patientId').val(data.id);
+            $('#identifier_type').val(data.identifier_type);
+            $('#identifier').val(data.identifier);
+            $('#name').val(data.name);
+            $('#contact_info').val(data.contact_info);
+            $('#gender').val(data.gender);
+            $('#patient-facility').val(data.created_by_facility);
+
+            if (data.documents && data.documents.length > 0) {
+                data.documents.forEach(doc => {
+                    const fileLink = `<a href="${doc.file_url}" target="_blank">${doc.file_name}</a>`;
+                    const deleteBtn = `<button type="button" class="btn btn-sm btn-danger ms-2" onclick="markDocumentForDeletion(${doc.id}, this)">X</button>`;
+                    $('#patient-documents-list').append(`<li data-doc-id="${doc.id}">${fileLink} ${deleteBtn}</li>`);
+                });
+            } else {
+                $('#patient-documents-list').append('<li>Chưa có tài liệu đính kèm</li>');
+            }
+
+            $('#patientModal').modal('show');
         });
-    } else {
-        $('#patient-documents-list').append('<li>Chưa có tài liệu đính kèm</li>');
     }
-      $('#patientModal').modal('show');
-    });
-  }
 
-  $('#patientForm').on('submit', function (e) {
-    e.preventDefault();
-    const id = $('#patientId').val();
-    const url = id ? `/api/patients/update/${id}/` : '/api/patients/create/';
-    const method = 'POST';
+    function markDocumentForDeletion(docId, buttonElement) {
+        // Thêm id vào danh sách xóa
+        let deleteDocs = $('#delete_documents').val().split(',').filter(Boolean);
+        if (!deleteDocs.includes(docId.toString())) {
+            deleteDocs.push(docId);
+            $('#delete_documents').val(deleteDocs.join(','));
+        }
 
-    const formData = new FormData(this);
-
-    $.ajax({
-      url,
-      method,
-      data: formData,
-      processData: false,
-      contentType: false,
-      success: function () {
-        location.reload();
-      },
-      error: function (xhr) {
-        alert('Lỗi: ' + xhr.responseText);
-      }
-    });
-  });
-
-  function deletePatient(id) {
-    if (confirm('Bạn có chắc muốn xóa bệnh nhân này?')) {
-      $.post(`/api/patients/delete/${id}/`, function () {
-        location.reload();
-      }).fail(function () {
-        alert('Xóa thất bại');
-      });
+        // Xóa file khỏi DOM
+        $(buttonElement).closest('li').remove();
     }
-  }
+
+    $('#patientForm').on('submit', function (e) {
+        e.preventDefault();
+        const id = $('#patientId').val();
+        const url = id ? `/api/patients/update/${id}/` : '/api/patients/create/';
+        const method = 'POST';
+
+        const formData = new FormData(this);
+
+        $.ajax({
+            url,
+            method,
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function () {
+                location.reload();
+            },
+            error: function (xhr) {
+                alert('Lỗi: ' + xhr.responseText);
+            }
+        });
+    });
+
+    function deletePatient(id) {
+        if (confirm('Bạn có chắc muốn xóa bệnh nhân này?')) {
+            $.post(`/api/patients/delete/${id}/`, function () {
+                location.reload();
+            }).fail(function () {
+                alert('Xóa thất bại');
+            });
+        }
+    }
 </script>
 
 {% endblock %}

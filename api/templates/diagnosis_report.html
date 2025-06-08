@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Báo cáo Chuẩn đoán{% endblock %}
+{% block content %}
+
+<h3>Báo cáo Thống kê Chuẩn đoán</h3>
+
+<form method="get" class="row g-3 mb-4">
+    <div class="col-auto">
+        <label for="start_month" class="form-label">Từ tháng</label>
+        <input type="month" class="form-control" id="start_month" name="start_month"
+               value="{{ start_month }}">
+    </div>
+    <div class="col-auto">
+        <label for="end_month" class="form-label">Đến tháng</label>
+        <input type="month" class="form-control" id="end_month" name="end_month"
+               value="{{ end_month }}">
+    </div>
+    <div class="col-auto d-flex align-items-end">
+        <button type="submit" class="btn btn-primary">Xem báo cáo</button>
+    </div>
+</form>
+
+{% if facility_stats %}
+<table class="table table-bordered">
+    <thead class="table-light">
+    <tr>
+        <th>Mã bệnh viện</th>
+        <th>Tên bệnh viện</th>
+        <th>Tổng số bệnh nhân</th>
+        <th>Tổng số dịch vụ</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for f in facility_stats %}
+        <tr>
+            <td>{{ f.patient__created_by_facility__id }}</td>
+            <td>{{ f.patient__created_by_facility__name }}</td>
+            <td>{{ f.total_patients }}</td>
+            <td>{{ f.total_service_types }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Không có dữ liệu cho khoảng thời gian đã chọn.</p>
+{% endif %}
+
+{% endblock %}

@@ -86,3 +86,40 @@ class DiagnosisDetail(models.Model):
 
     def __str__(self):
         return f"Diagnosis by {self.doctor}"
+
+
+class DiagnosisRecord(models.Model):
+    patient = models.ForeignKey('Patient', on_delete=models.CASCADE, related_name='diagnosis_records')
+    service_type = models.CharField(max_length=200)  # loại dịch vụ
+    department = models.CharField(max_length=200)    # khoa
+    examination_place = models.CharField(max_length=200)  # nơi khám
+    examination_time = models.DateTimeField()        # thời gian khám
+
+    doctor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={'groups__name': 'doctor'},  # chỉ cho chọn user có role doctor
+        related_name='diagnosis_records'
+    )
+
+    diagnosis_result = models.TextField()  # kết quả chuẩn đoán
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'Chuẩn đoán {self.patient_code} - {self.patient_name} ({self.examination_time.date()})'
+
+
+class DiagnosisDocument(models.Model):
+    diagnosis_record = models.ForeignKey(
+        DiagnosisRecord,
+        on_delete=models.CASCADE,
+        related_name='documents'
+    )
+    file = models.FileField(upload_to='diagnosis_documents/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'Document for {self.diagnosis_record.patient_code} - {self.file.name.split("/")[-1]}'
