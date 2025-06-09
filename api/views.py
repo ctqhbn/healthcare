@@ -300,11 +300,9 @@ def update_diagnosis(request, id):
         try:
             diagnosis = DiagnosisRecord.objects.get(id=id)
 
-            diagnosis.patient = Patient.objects.get(pk=request.POST['patient_id'])
             diagnosis.service_type = request.POST['service_type']
             diagnosis.department = request.POST['department']
             diagnosis.examination_place = request.POST['examination_place']
-            diagnosis.examination_time = request.POST['examination_time']
             diagnosis.diagnosis_result = request.POST['diagnosis_result']
             doctor_id = request.POST.get('doctor_id')
             diagnosis.doctor = User.objects.get(pk=doctor_id) if doctor_id else None
