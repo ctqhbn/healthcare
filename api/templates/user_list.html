@@ -4,11 +4,17 @@
 {% block content %}
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 
-<h3>Danh sách Người dùng</h3>
+<h3 class="page-title">Quản lý Người dùng <small>Danh sách</small></h3>
 
-<button class="btn btn-success mb-3" data-bs-toggle="modal" data-bs-target="#userModal" onclick="openCreateModal()">Thêm mới</button>
+{% include "user_subtabs.html" %}
 
-<table id="userTable" class="table table-bordered table-striped">
+<div class="table-toolbar">
+    <div></div>
+    <button class="btn-add" data-bs-toggle="modal" data-bs-target="#userModal" onclick="openCreateModal()">+ Thêm mới</button>
+</div>
+
+<div class="table-card">
+<table id="userTable" class="table">
     <thead>
         <tr>
             <th>Mã</th>
@@ -22,22 +28,29 @@
     <tbody>
         {% for u in users %}
         <tr>
-            <td>{{ u.code }}</td>
+            <td><span style="font-weight:500;">{{ u.code }}</span></td>
             <td>{{ u.username }}</td>
             <td>{{ u.name }}</td>
-            <td>{{ u.get_role_display }}</td>
-            <td>{{ u.facility.name }}</td>
             <td>
-                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#userModal"
-                    onclick="openEditModal('{{ u.id }}', '{{ u.code }}', '{{ u.username }}', '', '{{ u.name }}', '{{ u.role }}', '{{ u.facility.id }}')">
+                {% if u.role %}
+                <span class="badge-role {% if u.role_code == 'admin' %}badge-role-admin{% elif u.role_code == 'doctor' %}badge-role-doctor{% else %}badge-role-default{% endif %}">{{ u.role.name }}</span>
+                {% else %}
+                <span style="color:#94a3b8;">--</span>
+                {% endif %}
+            </td>
+            <td>{{ u.facility.name|default:"" }}</td>
+            <td>
+                <button class="btn-action btn-action-edit" data-bs-toggle="modal" data-bs-target="#userModal"
+                    onclick="openEditModal('{{ u.id }}', '{{ u.code }}', '{{ u.username }}', '{{ u.name }}', '{{ u.role.id|default:"" }}', '{{ u.facility.id|default:"" }}')">
                     Sửa
                 </button>
-                <button class="btn btn-sm btn-danger" onclick="deleteUser('{{ u.id }}')">Xóa</button>
+                <button class="btn-action btn-action-delete" onclick="deleteUser('{{ u.id }}')">Xóa</button>
             </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 
 <!-- Modal Thêm/Sửa Người dùng -->
 <div class="modal fade" id="userModal" tabindex="-1" aria-labelledby="userModalLabel" aria-hidden="true">
@@ -69,10 +82,11 @@
           </div>
           <div class="mb-3">
             <label for="user-role" class="form-label">Vai trò</label>
-            <select class="form-select" id="user-role" name="role" required>
+            <select class="form-select" id="user-role" name="role">
               <option value="">-- Chọn vai trò --</option>
-              <option value="admin">Admin</option>
-              <option value="doctor">Doctor</option>
+              {% for r in roles %}
+              <option value="{{ r.id }}">{{ r.name }}</option>
+              {% endfor %}
             </select>
           </div>
           <div class="mb-3">
@@ -86,8 +100,8 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button type="submit" class="btn btn-primary">Lưu</button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn-add" style="margin:0;">Lưu</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" style="border-radius:10px; font-size:0.825rem;">Hủy</button>
         </div>
       </form>
     </div>
@@ -106,41 +120,35 @@ $(document).ready(function () {
     $('#userTable').DataTable({
         language: {
             search: "Tìm kiếm:",
-            lengthMenu: "Hiển thị _MENU_ dòng",
-            info: "Trang _PAGE_ / _PAGES_",
-            paginate: {
-                previous: "Trước",
-                next: "Sau"
-            }
+            lengthMenu: "Chi tiết _MENU_",
+            info: "Hiển thị từ _START_ tới _END_ trong số _TOTAL_ bản ghi",
+            paginate: { previous: "«", next: "»" },
+            zeroRecords: "Không tìm thấy dữ liệu",
         }
     });
 });
 
-// Mở modal thêm mới
 function openCreateModal() {
     $('#userForm')[0].reset();
     $('#user-id').val('');
     $('#userModalLabel').text('Thêm người dùng');
 }
 
-// Mở modal sửa
-function openEditModal(id, code, username, password, name, role, facility) {
+function openEditModal(id, code, username, name, role, facility) {
     $('#user-id').val(id);
     $('#user-code').val(code);
     $('#user-username').val(username);
-    $('#user-password').val(''); // Không hiện mật khẩu cũ, để trống
+    $('#user-password').val('');
     $('#user-name').val(name);
     $('#user-role').val(role);
     $('#user-facility').val(facility);
     $('#userModalLabel').text('Cập nhật người dùng');
 }
 
-// Xử lý submit form (create/update)
 $('#userForm').submit(function(e){
     e.preventDefault();
     const id = $('#user-id').val();
     const url = id ? `/api/users/update/${id}/` : '/api/users/create/';
-    const method = 'POST';
 
     const data = {
         code: $('#user-code').val(),
@@ -153,12 +161,11 @@ $('#userForm').submit(function(e){
 
     $.ajax({
         url: url,
-        method: method,
+        method: 'POST',
         contentType: "application/json",
         data: JSON.stringify(data),
         headers: {'X-CSRFToken': '{{ csrf_token }}'},
         success: function(response){
-            alert(response.message);
             location.reload();
         },
         error: function(xhr){
@@ -167,22 +174,20 @@ $('#userForm').submit(function(e){
     });
 });
 
-// Xóa user
 function deleteUser(id) {
-    if(confirm('Bạn có chắc muốn xóa người dùng này không?')) {
+    confirmDelete('Bạn có chắc muốn xóa người dùng này không?', function () {
         $.ajax({
             url: `/api/users/delete/${id}/`,
             method: 'POST',
             headers: {'X-CSRFToken': '{{ csrf_token }}'},
             success: function(response){
-                alert(response.message);
                 location.reload();
             },
             error: function(xhr){
                 alert('Lỗi: ' + xhr.responseJSON.error);
             }
         });
-    }
+    });
 }
 </script>
 {% endblock %}

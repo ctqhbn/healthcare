@@ -6,12 +6,18 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
 
 from api.decorators import admin_required
-from api.models import DiagnosisDocument, DiagnosisRecord, MedicalFacility, Patient, PatientDocument
+from api.models import (
+    DiagnosisDocument, DiagnosisRecord, MedicalFacility, Patient, PatientDocument,
+    Role, Permission, Service, MedicalExamination, ExaminationService,
+    ExaminationDocument, ExaminationServiceDocument
+)
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.contrib.auth.hashers import make_password
 from django.views.decorators.http import require_GET
-from django.db.models import Count
+from django.db.models import Count, Sum
 from django.utils.dateparse import parse_date
+
+from django.contrib.auth import authenticate, login, logout as auth_logout
 
 from datetime import datetime
 
@@ -20,15 +26,73 @@ import json
 
 @admin_required
 def facility_list(request):
-    facilities = MedicalFacility.objects.all()
-    return render(request, 'facility_list.html', {'facilities': facilities, 'tab': 'facilities'})
+    facilities = MedicalFacility.objects.prefetch_related('services').all()
+    services = Service.objects.all().order_by('service_type', 'name')
+    # Group services by type for modal display
+    from itertools import groupby
+    grouped_services = []
+    for type_key, group in groupby(services, key=lambda s: s.service_type):
+        type_label = dict(Service.SERVICE_TYPE_CHOICES).get(type_key, type_key)
+        grouped_services.append({'type_key': type_key, 'type_label': type_label, 'items': list(group)})
+    return render(request, 'facility_list.html', {
+        'facilities': facilities,
+        'grouped_services': grouped_services,
+        'status_choices': MedicalFacility.STATUS_CHOICES,
+        'tab': 'facilities',
+    })
+
+
+@admin_required
+def service_list(request):
+    services = Service.objects.all().order_by('service_type', 'name')
+    return render(request, 'service_list.html', {
+        'services': services,
+        'service_type_choices': Service.SERVICE_TYPE_CHOICES,
+        'tab': 'services',
+    })
+
+
+@admin_required
+def report_list(request):
+    return render(request, 'report_list.html', {'tab': 'reports'})
 
 
 @admin_required
 def user_list(request):
-    users = User.objects.select_related('facility').all()
+    users = User.objects.select_related('facility', 'role').all()
     facilities = MedicalFacility.objects.all()
-    return render(request, 'user_list.html', {'users': users, 'tab': 'users', 'facilities': facilities})
+    roles = Role.objects.all()
+    return render(request, 'user_list.html', {
+        'users': users,
+        'tab': 'users',
+        'subtab': 'users',
+        'facilities': facilities,
+        'roles': roles,
+    })
+
+
+@admin_required
+def role_list(request):
+    roles = Role.objects.prefetch_related('permissions').all()
+    permissions = Permission.objects.all()
+    return render(request, 'role_list.html', {
+        'roles': roles,
+        'permissions': permissions,
+        'tab': 'users',
+        'subtab': 'roles',
+    })
+
+
+@admin_required
+def permission_list(request):
+    permissions = Permission.objects.all()
+    modules = Permission.objects.values_list('module', flat=True).distinct()
+    return render(request, 'permission_list.html', {
+        'permissions': permissions,
+        'modules': list(modules),
+        'tab': 'users',
+        'subtab': 'permissions',
+    })
 
 
 @admin_required
@@ -42,15 +106,392 @@ def patient_list(request):
     })
 
 
+@admin_required
+def examination_list(request):
+    examinations = MedicalExamination.objects.select_related(
+        'patient', 'facility', 'doctor'
+    ).prefetch_related('examination_services__service').annotate(
+        total_price=Sum('examination_services__price')
+    ).order_by('-examination_date')
+    patients = Patient.objects.all()
+    facilities = MedicalFacility.objects.prefetch_related('services').filter(status='active')
+    doctors = User.objects.filter(role__code='doctor')
+    return render(request, 'examination_list.html', {
+        'examinations': examinations,
+        'patients': patients,
+        'facilities': facilities,
+        'doctors': doctors,
+        'status_choices': MedicalExamination.STATUS_CHOICES,
+        'tab': 'examinations',
+    })
+
+
+@admin_required
+def examination_detail(request, pk):
+    exam = MedicalExamination.objects.select_related('patient', 'facility', 'doctor').get(pk=pk)
+    services = ExaminationService.objects.filter(examination=exam).select_related(
+        'service', 'assigned_doctor'
+    ).prefetch_related('documents')
+    overall_docs = ExaminationDocument.objects.filter(examination=exam)
+    doctors = User.objects.filter(role__code='doctor')
+    return render(request, 'examination_detail.html', {
+        'examination': exam,
+        'services': services,
+        'overall_docs': overall_docs,
+        'doctors': doctors,
+        'tab': 'examinations',
+    })
+
+
+@csrf_exempt
+def get_examination(request, pk):
+    try:
+        exam = MedicalExamination.objects.select_related('patient', 'facility', 'doctor').get(pk=pk)
+        services = ExaminationService.objects.filter(examination=exam).select_related('service', 'assigned_doctor')
+        exam_docs = ExaminationDocument.objects.filter(examination=exam)
+
+        services_data = []
+        for s in services:
+            svc_docs = ExaminationServiceDocument.objects.filter(examination_service=s)
+            services_data.append({
+                'id': s.id,
+                'service_id': s.service.id,
+                'service_name': s.service.name,
+                'assigned_doctor_id': s.assigned_doctor.id if s.assigned_doctor else '',
+                'assigned_doctor_name': s.assigned_doctor.name if s.assigned_doctor else '',
+                'price': int(s.price),
+                'result': s.result or '',
+                'status': s.status,
+                'notes': s.notes or '',
+                'documents': [{'id': d.id, 'file_url': d.file.url, 'file_name': d.original_filename or d.file.name.split('/')[-1]} for d in svc_docs],
+            })
+
+        data = {
+            'id': exam.id,
+            'patient_id': exam.patient.id,
+            'patient_name': exam.patient.name,
+            'facility_id': exam.facility.id,
+            'facility_name': exam.facility.name,
+            'doctor_id': exam.doctor.id if exam.doctor else '',
+            'doctor_name': exam.doctor.name if exam.doctor else '',
+            'examination_date': exam.examination_date.strftime('%Y-%m-%dT%H:%M'),
+            'status': exam.status,
+            'overall_result': exam.overall_result or '',
+            'notes': exam.notes or '',
+            'services': services_data,
+            'documents': [{'id': d.id, 'file_url': d.file.url, 'file_name': d.original_filename or d.file.name.split('/')[-1], 'document_type': d.document_type} for d in exam_docs],
+        }
+        return JsonResponse(data)
+    except MedicalExamination.DoesNotExist:
+        return JsonResponse({'error': 'Không tìm thấy phiếu khám'}, status=404)
+
+
+@csrf_exempt
+@transaction.atomic
+def create_examination(request):
+    if request.method == 'POST':
+        try:
+            patient_id = request.POST['patient_id']
+            facility_id = request.POST['facility_id']
+            doctor_id = request.POST.get('doctor_id')
+            examination_date = request.POST['examination_date']
+            status = request.POST.get('status', 'awaiting_payment')
+            overall_result = request.POST.get('overall_result', '')
+            notes = request.POST.get('notes', '')
+
+            exam = MedicalExamination.objects.create(
+                patient_id=patient_id,
+                facility_id=facility_id,
+                doctor_id=doctor_id if doctor_id else None,
+                examination_date=examination_date,
+                status=status,
+                overall_result=overall_result,
+                notes=notes,
+            )
+
+            # Services (JSON array)
+            services_json = request.POST.get('services', '[]')
+            services_list = json.loads(services_json)
+            for svc in services_list:
+                svc_price = svc.get('price', 0) or 0
+                if not svc_price:
+                    try:
+                        svc_price = Service.objects.get(pk=svc['service_id']).price
+                    except Service.DoesNotExist:
+                        svc_price = 0
+                ExaminationService.objects.create(
+                    examination=exam,
+                    service_id=svc['service_id'],
+                    assigned_doctor_id=svc.get('assigned_doctor_id') or None,
+                    price=svc_price,
+                    result=svc.get('result', ''),
+                    status=svc.get('status', 'pending'),
+                    notes=svc.get('notes', ''),
+                )
+
+            # General documents
+            for f in request.FILES.getlist('documents'):
+                ExaminationDocument.objects.create(
+                    examination=exam, file=f, document_type='attachment',
+                    original_filename=f.name,
+                )
+            for f in request.FILES.getlist('result_documents'):
+                ExaminationDocument.objects.create(
+                    examination=exam, file=f, document_type='result',
+                    original_filename=f.name,
+                )
+
+            return JsonResponse({'message': 'Tạo phiếu khám thành công', 'id': exam.id})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+@transaction.atomic
+def update_examination(request, pk):
+    if request.method == 'POST':
+        try:
+            exam = MedicalExamination.objects.get(pk=pk)
+            exam.patient_id = request.POST['patient_id']
+            exam.facility_id = request.POST['facility_id']
+            doctor_id = request.POST.get('doctor_id')
+            exam.doctor_id = doctor_id if doctor_id else None
+            exam.examination_date = request.POST['examination_date']
+            exam.status = request.POST.get('status', exam.status)
+            exam.overall_result = request.POST.get('overall_result', '')
+            exam.notes = request.POST.get('notes', '')
+            exam.save()
+
+            # Update services: keep existing, add new, remove unchecked
+            services_json = request.POST.get('services', '[]')
+            services_list = json.loads(services_json)
+            new_service_ids = {int(svc['service_id']) for svc in services_list}
+            existing_service_ids = set(exam.examination_services.values_list('service_id', flat=True))
+
+            # Remove services that were unchecked
+            exam.examination_services.filter(service_id__in=existing_service_ids - new_service_ids).delete()
+
+            # Add new services (not already existing)
+            for svc in services_list:
+                sid = int(svc['service_id'])
+                if sid not in existing_service_ids:
+                    svc_price = svc.get('price', 0) or 0
+                    if not svc_price:
+                        try:
+                            svc_price = Service.objects.get(pk=sid).price
+                        except Service.DoesNotExist:
+                            svc_price = 0
+                    ExaminationService.objects.create(
+                        examination=exam,
+                        service_id=sid,
+                        price=svc_price,
+                    )
+
+            # Delete selected docs
+            delete_doc_ids = request.POST.get('delete_documents', '')
+            if delete_doc_ids:
+                ids = [int(i) for i in delete_doc_ids.split(',') if i.strip().isdigit()]
+                ExaminationDocument.objects.filter(id__in=ids, examination=exam).delete()
+
+            # New documents
+            for f in request.FILES.getlist('documents'):
+                ExaminationDocument.objects.create(
+                    examination=exam, file=f, document_type='attachment',
+                    original_filename=f.name,
+                )
+            for f in request.FILES.getlist('result_documents'):
+                ExaminationDocument.objects.create(
+                    examination=exam, file=f, document_type='result',
+                    original_filename=f.name,
+                )
+
+            return JsonResponse({'message': 'Cập nhật phiếu khám thành công'})
+        except MedicalExamination.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy phiếu khám'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def delete_examination(request, pk):
+    if request.method == 'POST':
+        try:
+            exam = MedicalExamination.objects.get(pk=pk)
+            exam.delete()
+            return JsonResponse({'message': 'Xóa phiếu khám thành công'})
+        except MedicalExamination.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy phiếu khám'}, status=404)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def get_facility_services_api(request, pk):
+    """Get services available at a facility"""
+    try:
+        facility = MedicalFacility.objects.prefetch_related('services').get(pk=pk)
+        services = [{'id': s.id, 'name': s.name, 'service_type': s.get_service_type_display(), 'price': int(s.price)} for s in facility.services.all()]
+        return JsonResponse({'services': services})
+    except MedicalFacility.DoesNotExist:
+        return JsonResponse({'error': 'Không tìm thấy cơ sở'}, status=404)
+
+
+@csrf_exempt
+@transaction.atomic
+def update_examination_service(request, pk):
+    """Update a single examination service (result, doctor, files, etc.)"""
+    if request.method == 'POST':
+        try:
+            svc = ExaminationService.objects.get(pk=pk)
+            svc.assigned_doctor_id = request.POST.get('assigned_doctor_id') or None
+            service_time = request.POST.get('service_time')
+            svc.service_time = service_time if service_time else None
+            svc.price = request.POST.get('price', svc.price) or 0
+            svc.status = request.POST.get('status', svc.status)
+            svc.result = request.POST.get('result', '')
+            svc.notes = request.POST.get('notes', '')
+            svc.save()
+
+            # Delete selected docs
+            delete_doc_ids = request.POST.get('delete_documents', '')
+            if delete_doc_ids:
+                ids = [int(i) for i in delete_doc_ids.split(',') if i.strip().isdigit()]
+                ExaminationServiceDocument.objects.filter(id__in=ids, examination_service=svc).delete()
+
+            # New files
+            for f in request.FILES.getlist('documents'):
+                ExaminationServiceDocument.objects.create(
+                    examination_service=svc, file=f, original_filename=f.name,
+                )
+
+            return JsonResponse({'message': 'Cập nhật dịch vụ thành công'})
+        except ExaminationService.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy dịch vụ'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+@transaction.atomic
+def update_examination_overall(request, pk):
+    """Update overall result + upload general documents"""
+    if request.method == 'POST':
+        try:
+            exam = MedicalExamination.objects.get(pk=pk)
+            exam.overall_result = request.POST.get('overall_result', '')
+            exam.save()
+
+            for f in request.FILES.getlist('documents'):
+                ExaminationDocument.objects.create(
+                    examination=exam, file=f, document_type='attachment',
+                    original_filename=f.name,
+                )
+
+            return JsonResponse({'message': 'Cập nhật kết quả tổng thành công'})
+        except MedicalExamination.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy phiếu khám'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def update_examination_status(request, pk):
+    """Update examination status only"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            exam = MedicalExamination.objects.get(pk=pk)
+            exam.status = data['status']
+            exam.save()
+            return JsonResponse({'message': 'Cập nhật trạng thái thành công'})
+        except MedicalExamination.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy phiếu khám'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def delete_examination_doc(request, pk):
+    """Delete an examination document"""
+    if request.method == 'POST':
+        try:
+            doc = ExaminationDocument.objects.get(pk=pk)
+            doc.delete()
+            return JsonResponse({'message': 'Đã xóa'})
+        except ExaminationDocument.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy'}, status=404)
+    return HttpResponseBadRequest("Invalid method")
+
+
 @login_required
 def dashboard(request):
-    print(request.user.role, "ROLE")
-    if request.user.role == 'admin':
-        return redirect('facility_list')
-    elif request.user.role == 'doctor':
-        return redirect('diagnosis_list')
+    if request.user.role_code in ('admin', 'doctor'):
+        return render(request, 'dashboard_home.html', {'tab': 'home'})
+    elif request.user.role_code == 'patient':
+        return redirect('patient_dashboard')
     else:
-        return redirect('logout')  # hoặc trang lỗi
+        return redirect('logout')
+
+
+@login_required
+def patient_lookup_api(request):
+    identifier = request.GET.get('identifier', '').strip()
+    if not identifier:
+        return JsonResponse({'error': 'Thiếu số định danh'}, status=400)
+
+    patients = Patient.objects.filter(identifier=identifier)
+    if not patients.exists():
+        return JsonResponse({'data': [], 'patient_name': ''})
+
+    patient = patients.first()
+    records = DiagnosisRecord.objects.filter(patient=patient).select_related('doctor').order_by('-examination_time')
+
+    data = []
+    for r in records:
+        public_url = None
+        if r.public_token:
+            public_url = f'/diagnosis/public/{r.public_token}/'
+        data.append({
+            'examination_time': r.examination_time.strftime('%d/%m/%Y %H:%M'),
+            'service_type': r.service_type,
+            'department': r.department,
+            'examination_place': r.examination_place,
+            'doctor_name': r.doctor.name if r.doctor else '',
+            'diagnosis_result': r.diagnosis_result,
+            'public_url': public_url,
+        })
+
+    return JsonResponse({'data': data, 'patient_name': patient.name})
+
+
+def patient_login_view(request):
+    if request.user.is_authenticated:
+        return redirect('patient_dashboard')
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            return redirect('patient_dashboard')
+        else:
+            return render(request, 'patient_login.html', {'error': 'Tài khoản hoặc mật khẩu không đúng.'})
+    return render(request, 'patient_login.html')
+
+
+def patient_logout_view(request):
+    auth_logout(request)
+    return redirect('patient_login')
+
+
+def patient_dashboard(request):
+    if not request.user.is_authenticated:
+        return redirect('patient_login')
+    return render(request, 'patient_lookup.html', {'tab': 'lookup'})
 
 
 @csrf_exempt
@@ -61,7 +502,8 @@ def create_facility(request):
             facility = MedicalFacility.objects.create(
                 code=data['code'],
                 name=data['name'],
-                address=data['address']
+                address=data['address'],
+                status=data.get('status', 'active'),
             )
             return JsonResponse({'message': 'Tạo thành công', 'id': facility.id})
         except Exception as e:
@@ -78,6 +520,7 @@ def update_facility(request, pk):
             facility.code = data['code']
             facility.name = data['name']
             facility.address = data['address']
+            facility.status = data.get('status', facility.status)
             facility.save()
             return JsonResponse({'message': 'Cập nhật thành công'})
         except MedicalFacility.DoesNotExist:
@@ -100,17 +543,97 @@ def delete_facility(request, pk):
 
 
 @csrf_exempt
+def get_facility(request, pk):
+    try:
+        f = MedicalFacility.objects.prefetch_related('services').get(pk=pk)
+        return JsonResponse({
+            'id': f.id, 'code': f.code, 'name': f.name,
+            'address': f.address, 'status': f.status,
+            'services': list(f.services.values_list('id', flat=True)),
+        })
+    except MedicalFacility.DoesNotExist:
+        return JsonResponse({'error': 'Không tìm thấy'}, status=404)
+
+
+@csrf_exempt
+def update_facility_services(request, pk):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            facility = MedicalFacility.objects.get(pk=pk)
+            service_ids = data.get('services', [])
+            facility.services.set(service_ids)
+            return JsonResponse({'message': 'Cập nhật dịch vụ thành công'})
+        except MedicalFacility.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def create_service(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            service = Service.objects.create(
+                code=data['code'],
+                name=data['name'],
+                service_type=data.get('service_type', 'khac'),
+                price=data.get('price', 0),
+                description=data.get('description', ''),
+            )
+            return JsonResponse({'message': 'Tạo thành công', 'id': service.id})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def update_service(request, pk):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            service = Service.objects.get(pk=pk)
+            service.code = data['code']
+            service.name = data['name']
+            service.service_type = data.get('service_type', service.service_type)
+            service.price = data.get('price', service.price) or 0
+            service.description = data.get('description', '')
+            service.save()
+            return JsonResponse({'message': 'Cập nhật thành công'})
+        except Service.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def delete_service(request, pk):
+    if request.method == 'POST':
+        try:
+            service = Service.objects.get(pk=pk)
+            service.delete()
+            return JsonResponse({'message': 'Đã xóa thành công'})
+        except Service.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy'}, status=404)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
 def create_user(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            role = Role.objects.get(pk=data['role']) if data.get('role') else None
             user = User(
                 code=data['code'],
                 username=data['username'],
                 name=data['name'],
-                role=data['role'],
+                role=role,
                 facility=MedicalFacility.objects.get(pk=data['facility']) if data.get('facility') else None,
-                password=make_password(data['password'])  # hash mật khẩu
+                password=make_password(data['password'])
             )
             user.save()
             return JsonResponse({'message': 'Tạo người dùng thành công', 'id': user.id})
@@ -128,9 +651,8 @@ def update_user(request, pk):
             user.code = data['code']
             user.username = data['username']
             user.name = data['name']
-            user.role = data['role']
+            user.role = Role.objects.get(pk=data['role']) if data.get('role') else None
             user.facility = MedicalFacility.objects.get(pk=data['facility']) if data.get('facility') else None
-            # Nếu có password mới thì cập nhật (hash password)
             if data.get('password'):
                 user.password = make_password(data['password'])
             user.save()
@@ -153,6 +675,126 @@ def delete_user(request, pk):
             return JsonResponse({'error': 'Không tìm thấy người dùng'}, status=404)
     return HttpResponseBadRequest("Invalid method")
 
+
+# ===== Role CRUD =====
+
+@csrf_exempt
+def create_role(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            role = Role.objects.create(
+                code=data['code'],
+                name=data['name'],
+                description=data.get('description', '')
+            )
+            perm_ids = data.get('permissions', [])
+            if perm_ids:
+                role.permissions.set(perm_ids)
+            return JsonResponse({'message': 'Tạo vai trò thành công', 'id': role.id})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def update_role(request, pk):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            role = Role.objects.get(pk=pk)
+            role.code = data['code']
+            role.name = data['name']
+            role.description = data.get('description', '')
+            role.save()
+            perm_ids = data.get('permissions', [])
+            role.permissions.set(perm_ids)
+            return JsonResponse({'message': 'Cập nhật vai trò thành công'})
+        except Role.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy vai trò'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def delete_role(request, pk):
+    if request.method == 'POST':
+        try:
+            role = Role.objects.get(pk=pk)
+            role.delete()
+            return JsonResponse({'message': 'Xóa vai trò thành công'})
+        except Role.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy vai trò'}, status=404)
+    return HttpResponseBadRequest("Invalid method")
+
+
+def get_role(request, pk):
+    try:
+        role = Role.objects.prefetch_related('permissions').get(pk=pk)
+        data = {
+            'id': role.id,
+            'code': role.code,
+            'name': role.name,
+            'description': role.description or '',
+            'permissions': list(role.permissions.values_list('id', flat=True)),
+        }
+        return JsonResponse(data)
+    except Role.DoesNotExist:
+        return JsonResponse({'error': 'Không tìm thấy vai trò'}, status=404)
+
+
+# ===== Permission CRUD =====
+
+@csrf_exempt
+def create_permission(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            perm = Permission.objects.create(
+                code=data['code'],
+                name=data['name'],
+                module=data['module'],
+                description=data.get('description', '')
+            )
+            return JsonResponse({'message': 'Tạo quyền thành công', 'id': perm.id})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def update_permission(request, pk):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            perm = Permission.objects.get(pk=pk)
+            perm.code = data['code']
+            perm.name = data['name']
+            perm.module = data['module']
+            perm.description = data.get('description', '')
+            perm.save()
+            return JsonResponse({'message': 'Cập nhật quyền thành công'})
+        except Permission.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy quyền'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+def delete_permission(request, pk):
+    if request.method == 'POST':
+        try:
+            perm = Permission.objects.get(pk=pk)
+            perm.delete()
+            return JsonResponse({'message': 'Xóa quyền thành công'})
+        except Permission.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy quyền'}, status=404)
+    return HttpResponseBadRequest("Invalid method")
+
+
+# ===== Existing views (unchanged logic) =====
 
 @csrf_exempt
 def create_patient(request):
@@ -250,7 +892,7 @@ def get_patient(request, pk):
 def diagnosis_list(request):
     diagnosis_records = DiagnosisRecord.objects.all().select_related('doctor')
     facilities = MedicalFacility.objects.all()
-    doctors = User.objects.filter(role='doctor')
+    doctors = User.objects.filter(role__code='doctor')
     patients = Patient.objects.all()
     return render(request, 'diagnosis_list.html', {
         'diagnosis_records': diagnosis_records,
@@ -308,11 +950,9 @@ def update_diagnosis(request, id):
             diagnosis.doctor = User.objects.get(pk=doctor_id) if doctor_id else None
             diagnosis.save()
 
-            # Xóa file nếu user yêu cầu
             file_delete_list = json.loads(request.POST.get('files_to_delete', '[]'))
             DiagnosisDocument.objects.filter(id__in=file_delete_list, diagnosis_record=diagnosis).delete()
 
-            # Thêm file mới
             for file in request.FILES.getlist('documents'):
                 DiagnosisDocument.objects.create(diagnosis_record=diagnosis, file=file)
 
@@ -387,7 +1027,7 @@ def diagnosis_list_api(request):
                 'examination_time': d.examination_time.strftime("%Y-%m-%d %H:%M"),
                 'patient_code': d.patient.id,
                 'service_type': d.service_type,
-                'facility_code': d.patient.created_by_facility.name,
+                'facility_code': d.patient.created_by_facility.name if d.patient.created_by_facility else '',
                 'department': d.department,
                 'examination_place': d.examination_place,
                 'identifier_number': d.patient.identifier,
@@ -404,7 +1044,7 @@ def get_doctors_by_patient(request, patient_id):
         patient = Patient.objects.get(pk=patient_id)
         facility = patient.created_by_facility
 
-        doctors = User.objects.filter(role='doctor', facility=facility)
+        doctors = User.objects.filter(role__code='doctor', facility=facility)
         doctor_list = [
             {'id': d.id, 'name': d.name}
             for d in doctors
@@ -437,9 +1077,6 @@ def diagnosis_report(request):
         examination_time__gte=start_date,
         examination_time__lt=end_date
     )
-
-    # Group theo bệnh viện
-    from django.db.models import Count
 
     facility_stats = records.values(
         'patient__created_by_facility__id',
@@ -475,7 +1112,7 @@ def diagnosis_public_view(request, token):
         record = DiagnosisRecord.objects.get(public_token=token)
         documents = []
 
-        for d in record.documents.all():  # giả sử bạn có liên kết Document model
+        for d in record.documents.all():
             file_url = d.file.url
             is_image = file_url.lower().endswith(('.jpg', '.jpeg', '.png'))
 

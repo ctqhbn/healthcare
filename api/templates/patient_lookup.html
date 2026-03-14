@@ -1,0 +1,98 @@
+{% extends "patient_base.html" %}
+{% block title %}Tra cứu kết quả{% endblock %}
+{% block content %}
+
+<h3 class="page-title">Tra cứu kết quả chuẩn đoán</h3>
+
+<div style="background:#fff; border-radius:16px; padding:24px; border:1px solid #f1f5f9; box-shadow:0 1px 3px rgba(0,0,0,0.04); margin-bottom:20px;">
+    <div class="d-flex align-items-end gap-3 flex-wrap">
+        <div>
+            <label class="form-label" style="font-size:0.8rem; color:#64748b; margin-bottom:2px;">Số định danh (CCCD / BHYT / SĐT)</label>
+            <input type="text" id="identifierInput" class="form-control" placeholder="Nhập số định danh" style="font-size:0.85rem; border-radius:10px; min-width:280px;">
+        </div>
+        <div>
+            <button class="btn-add" style="padding:9px 24px;" onclick="searchDiagnosis()">Tra cứu</button>
+        </div>
+    </div>
+</div>
+
+<div id="resultArea"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script>
+$('#identifierInput').on('keypress', function(e) {
+    if (e.which === 13) searchDiagnosis();
+});
+
+function searchDiagnosis() {
+    const identifier = $('#identifierInput').val().trim();
+    if (!identifier) {
+        alert('Vui lòng nhập số định danh');
+        return;
+    }
+
+    $.get('/api/patient-lookup/', { identifier: identifier }, function(response) {
+        const area = $('#resultArea');
+        area.empty();
+
+        if (!response.data || response.data.length === 0) {
+            area.html(`
+                <div class="table-card" style="padding:40px; text-align:center; color:#94a3b8;">
+                    <p style="font-size:0.9rem; margin:0;">Không tìm thấy kết quả cho số định danh này.</p>
+                </div>
+            `);
+            return;
+        }
+
+        let html = `
+            <div style="margin-bottom:12px; color:#475569; font-size:0.85rem;">
+                Tìm thấy <strong>${response.data.length}</strong> kết quả cho <strong>${response.patient_name}</strong>
+            </div>
+            <div class="table-card">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Thời gian khám</th>
+                        <th>Loại dịch vụ</th>
+                        <th>Khoa</th>
+                        <th>Nơi khám</th>
+                        <th>Bác sĩ</th>
+                        <th>Kết quả</th>
+                        <th>Chi tiết</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        response.data.forEach(d => {
+            const resultPreview = d.diagnosis_result.length > 50
+                ? d.diagnosis_result.substring(0, 50) + '...'
+                : d.diagnosis_result;
+            html += `
+                <tr>
+                    <td>${d.examination_time}</td>
+                    <td><span class="badge-role badge-role-doctor">${d.service_type}</span></td>
+                    <td>${d.department}</td>
+                    <td>${d.examination_place}</td>
+                    <td>${d.doctor_name}</td>
+                    <td style="max-width:200px;">${resultPreview}</td>
+                    <td>
+                        ${d.public_url
+                            ? `<a href="${d.public_url}" target="_blank" class="btn-action btn-action-info">Xem</a>`
+                            : '<span style="color:#94a3b8; font-size:0.8rem;">—</span>'}
+                    </td>
+                </tr>`;
+        });
+
+        html += '</tbody></table></div>';
+        area.html(html);
+    }).fail(function() {
+        $('#resultArea').html(`
+            <div class="table-card" style="padding:40px; text-align:center; color:#ef4444;">
+                <p style="font-size:0.9rem; margin:0;">Có lỗi xảy ra. Vui lòng thử lại.</p>
+            </div>
+        `);
+    });
+}
+</script>
+
+{% endblock %}

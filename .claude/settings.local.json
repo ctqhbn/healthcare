@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python manage.py makemigrations api)",
+      "Bash(python manage.py makemigrations api -n \"add_permission_role_models\")",
+      "Bash(python manage.py migrate)",
+      "Bash(python manage.py makemigrations api --empty -n \"seed_roles_migrate_users\")",
+      "Bash(python manage.py makemigrations api -n \"user_role_to_fk\")",
+      "Bash(python manage.py check)",
+      "Bash(python manage.py check --no-color)",
+      "Bash(python manage.py makemigrations api --name add_service_time)",
+      "Bash(python manage.py makemigrations api --name add_price_to_examination_service)",
+      "Bash(python manage.py makemigrations api --name add_price_to_service)",
+      "Bash(python manage.py makemigrations api --name update_examination_status_choices)"
+    ]
+  }
+}
