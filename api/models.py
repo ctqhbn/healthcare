@@ -106,9 +106,9 @@ class PatientDocument(models.Model):
 
 class Patient(models.Model):
     IDENTIFIER_CHOICES = [
-        ('insurance', 'Insurance Number'),
-        ('national_id', 'National ID'),
-        ('phone', 'Phone Number'),
+        ('insurance', 'Số BHYT'),
+        ('national_id', 'CMND/CCCD'),
+        ('phone', 'Số điện thoại'),
     ]
 
     identifier_type = models.CharField(max_length=20, choices=IDENTIFIER_CHOICES)
@@ -157,6 +157,7 @@ class ExaminationService(models.Model):
     service = models.ForeignKey('Service', on_delete=models.CASCADE, related_name='examination_services')
     assigned_doctor = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_examination_services')
     service_time = models.DateTimeField(null=True, blank=True)
+    room = models.CharField(max_length=50, blank=True, null=True)
     price = models.DecimalField(max_digits=12, decimal_places=0, default=0)
     result = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')

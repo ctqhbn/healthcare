@@ -1,11 +1,12 @@
 from django.shortcuts import redirect, render
 from django.contrib.auth import get_user_model
+
 User = get_user_model()
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
 
-from api.decorators import admin_required
+from api.decorators import admin_required, permission_required
 from api.models import (
     DiagnosisDocument, DiagnosisRecord, MedicalFacility, Patient, PatientDocument,
     Role, Permission, Service, MedicalExamination, ExaminationService,
@@ -52,7 +53,7 @@ def service_list(request):
     })
 
 
-@admin_required
+@permission_required('report.view')
 def report_list(request):
     return render(request, 'report_list.html', {'tab': 'reports'})
 
@@ -95,7 +96,7 @@ def permission_list(request):
     })
 
 
-@admin_required
+@permission_required('patient.view')
 def patient_list(request):
     patients = Patient.objects.all()
     facilities = MedicalFacility.objects.all()
@@ -106,7 +107,7 @@ def patient_list(request):
     })
 
 
-@admin_required
+@permission_required('examination.view')
 def examination_list(request):
     examinations = MedicalExamination.objects.select_related(
         'patient', 'facility', 'doctor'
@@ -126,7 +127,7 @@ def examination_list(request):
     })
 
 
-@admin_required
+@permission_required('examination.view')
 def examination_detail(request, pk):
     exam = MedicalExamination.objects.select_related('patient', 'facility', 'doctor').get(pk=pk)
     services = ExaminationService.objects.filter(examination=exam).select_related(
@@ -144,6 +145,7 @@ def examination_detail(request, pk):
 
 
 @csrf_exempt
+@permission_required('examination.view')
 def get_examination(request, pk):
     try:
         exam = MedicalExamination.objects.select_related('patient', 'facility', 'doctor').get(pk=pk)
@@ -157,6 +159,7 @@ def get_examination(request, pk):
                 'id': s.id,
                 'service_id': s.service.id,
                 'service_name': s.service.name,
+                'room': s.room or '',
                 'assigned_doctor_id': s.assigned_doctor.id if s.assigned_doctor else '',
                 'assigned_doctor_name': s.assigned_doctor.name if s.assigned_doctor else '',
                 'price': int(s.price),
@@ -188,6 +191,7 @@ def get_examination(request, pk):
 
 @csrf_exempt
 @transaction.atomic
+@permission_required('examination.create')
 def create_examination(request):
     if request.method == 'POST':
         try:
@@ -249,6 +253,7 @@ def create_examination(request):
 
 @csrf_exempt
 @transaction.atomic
+@permission_required('examination.edit')
 def update_examination(request, pk):
     if request.method == 'POST':
         try:
@@ -315,6 +320,7 @@ def update_examination(request, pk):
 
 
 @csrf_exempt
+@permission_required('examination.delete')
 def delete_examination(request, pk):
     if request.method == 'POST':
         try:
@@ -339,6 +345,7 @@ def get_facility_services_api(request, pk):
 
 @csrf_exempt
 @transaction.atomic
+@permission_required('examination.edit')
 def update_examination_service(request, pk):
     """Update a single examination service (result, doctor, files, etc.)"""
     if request.method == 'POST':
@@ -351,6 +358,7 @@ def update_examination_service(request, pk):
             svc.status = request.POST.get('status', svc.status)
             svc.result = request.POST.get('result', '')
             svc.notes = request.POST.get('notes', '')
+            svc.room = request.POST.get('room', '').strip() or None
             svc.save()
 
             # Delete selected docs
@@ -375,6 +383,7 @@ def update_examination_service(request, pk):
 
 @csrf_exempt
 @transaction.atomic
+@permission_required('examination.edit')
 def update_examination_overall(request, pk):
     """Update overall result + upload general documents"""
     if request.method == 'POST':
@@ -398,6 +407,7 @@ def update_examination_overall(request, pk):
 
 
 @csrf_exempt
+@permission_required('examination.edit')
 def update_examination_status(request, pk):
     """Update examination status only"""
     if request.method == 'POST':
@@ -415,6 +425,7 @@ def update_examination_status(request, pk):
 
 
 @csrf_exempt
+@permission_required('examination.edit')
 def delete_examination_doc(request, pk):
     """Delete an examination document"""
     if request.method == 'POST':
@@ -797,6 +808,7 @@ def delete_permission(request, pk):
 # ===== Existing views (unchanged logic) =====
 
 @csrf_exempt
+@permission_required('patient.create')
 def create_patient(request):
     if request.method == 'POST':
         try:
@@ -827,6 +839,7 @@ def create_patient(request):
 
 
 @csrf_exempt
+@permission_required('patient.edit')
 def update_patient(request, pk):
     if request.method == 'POST':
         try:
@@ -856,6 +869,7 @@ def update_patient(request, pk):
 
 
 @csrf_exempt
+@permission_required('patient.delete')
 def delete_patient(request, pk):
     if request.method == 'POST':
         try:
@@ -868,6 +882,7 @@ def delete_patient(request, pk):
 
 
 @csrf_exempt
+@permission_required('patient.view')
 def get_patient(request, pk):
     if request.method == 'GET':
         try:
@@ -889,6 +904,7 @@ def get_patient(request, pk):
     return HttpResponseBadRequest("Invalid method")
 
 
+@permission_required('diagnosis.view')
 def diagnosis_list(request):
     diagnosis_records = DiagnosisRecord.objects.all().select_related('doctor')
     facilities = MedicalFacility.objects.all()
@@ -905,6 +921,7 @@ def diagnosis_list(request):
 
 @csrf_exempt
 @transaction.atomic
+@permission_required('diagnosis.create')
 def create_diagnosis(request):
     if request.method == 'POST':
         try:
@@ -937,6 +954,7 @@ def create_diagnosis(request):
 
 @csrf_exempt
 @transaction.atomic
+@permission_required('diagnosis.edit')
 def update_diagnosis(request, id):
     if request.method == 'POST':
         try:
@@ -963,6 +981,7 @@ def update_diagnosis(request, id):
 
 
 @csrf_exempt
+@permission_required('diagnosis.delete')
 def delete_diagnosis(request, id):
     if request.method == 'POST':
         try:
@@ -973,6 +992,7 @@ def delete_diagnosis(request, id):
             return JsonResponse({'error': 'Không tìm thấy chuẩn đoán'}, status=404)
 
 
+@permission_required('diagnosis.view')
 def get_diagnosis(request, id):
     try:
         diagnosis = DiagnosisRecord.objects.get(id=id)
@@ -1005,6 +1025,7 @@ def get_diagnosis(request, id):
 
 
 @csrf_exempt
+@permission_required('diagnosis.view')
 def diagnosis_list_api(request):
     if request.method == 'GET':
         start_date = request.GET.get('start_date')
@@ -1061,6 +1082,7 @@ def add_month(dt):
     return datetime(year, month, 1)
 
 
+@permission_required('report.view')
 def diagnosis_report(request):
     start_month = request.GET.get('start_month')
     end_month = request.GET.get('end_month')

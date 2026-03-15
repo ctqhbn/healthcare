@@ -93,6 +93,7 @@
             <div style="font-size:0.8rem; color:#94a3b8;">
                 Người phụ trách: <strong style="color:#475569;">{{ svc.assigned_doctor.name|default:"Chưa chỉ định" }}</strong>
                 {% if svc.service_time %} · {{ svc.service_time|date:"d/m/Y H:i" }}{% endif %}
+                {% if svc.room %} · Phòng: <strong style="color:#475569;">{{ svc.room }}</strong>{% endif %}
             </div>
         </div>
         <div class="d-flex align-items-center gap-2">
@@ -133,7 +134,7 @@
     <!-- Edit form (hidden) -->
     <div id="svcEdit_{{ svc.id }}" style="display:none;">
         <div class="row mb-2 g-2">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label style="font-size:0.75rem; color:#64748b;">Người phụ trách</label>
                 <select class="form-select" id="svcDoctor_{{ svc.id }}" style="font-size:0.8rem; border-radius:8px; padding:6px 10px;">
                     <option value="">-- Chọn người phụ trách --</option>
@@ -142,11 +143,15 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label style="font-size:0.75rem; color:#64748b;">Giờ thực hiện</label>
                 <input type="datetime-local" class="form-control" id="svcTime_{{ svc.id }}" value="{% if svc.service_time %}{{ svc.service_time|date:'Y-m-d\TH:i' }}{% endif %}" style="font-size:0.8rem; border-radius:8px; padding:6px 10px;">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label style="font-size:0.75rem; color:#64748b;">Phòng</label>
+                <input type="text" class="form-control" id="svcRoom_{{ svc.id }}" value="{{ svc.room|default:'' }}" placeholder="VD: P301" style="font-size:0.8rem; border-radius:8px; padding:6px 10px;">
+            </div>
+            <div class="col-md-3">
                 <label style="font-size:0.75rem; color:#64748b;">Trạng thái</label>
                 <select class="form-select" id="svcStatus_{{ svc.id }}" style="font-size:0.8rem; border-radius:8px; padding:6px 10px;">
                     <option value="pending" {% if svc.status == 'pending' %}selected{% endif %}>Chờ thực hiện</option>
@@ -286,6 +291,7 @@ function saveService(svcId) {
     const formData = new FormData();
     formData.append('assigned_doctor_id', document.getElementById('svcDoctor_' + svcId).value);
     formData.append('service_time', document.getElementById('svcTime_' + svcId).value);
+    formData.append('room', document.getElementById('svcRoom_' + svcId).value);
     formData.append('status', document.getElementById('svcStatus_' + svcId).value);
     formData.append('result', document.getElementById('svcResult_' + svcId).value);
     formData.append('notes', document.getElementById('svcNotes_' + svcId).value);

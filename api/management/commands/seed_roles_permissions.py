@@ -18,11 +18,18 @@ PERMISSIONS_DATA = [
     {'code': 'patient.create', 'name': 'Tạo bệnh nhân', 'module': 'patient'},
     {'code': 'patient.edit', 'name': 'Sửa bệnh nhân', 'module': 'patient'},
     {'code': 'patient.delete', 'name': 'Xóa bệnh nhân', 'module': 'patient'},
+    # Examination (khám chữa bệnh)
+    {'code': 'examination.view', 'name': 'Xem phiếu khám', 'module': 'examination'},
+    {'code': 'examination.create', 'name': 'Tạo phiếu khám', 'module': 'examination'},
+    {'code': 'examination.edit', 'name': 'Sửa phiếu khám', 'module': 'examination'},
+    {'code': 'examination.delete', 'name': 'Xóa phiếu khám', 'module': 'examination'},
     # Diagnosis
     {'code': 'diagnosis.view', 'name': 'Xem chuẩn đoán', 'module': 'diagnosis'},
     {'code': 'diagnosis.create', 'name': 'Tạo chuẩn đoán', 'module': 'diagnosis'},
     {'code': 'diagnosis.edit', 'name': 'Sửa chuẩn đoán', 'module': 'diagnosis'},
     {'code': 'diagnosis.delete', 'name': 'Xóa chuẩn đoán', 'module': 'diagnosis'},
+    # Report
+    {'code': 'report.view', 'name': 'Xem báo cáo thống kê', 'module': 'report'},
 ]
 
 ROLES_DATA = [
@@ -35,10 +42,60 @@ ROLES_DATA = [
     {
         'code': 'doctor',
         'name': 'Bác sĩ',
-        'description': 'Quản lý chuẩn đoán và xem bệnh nhân',
+        'description': 'Quản lý khám chữa bệnh, chuẩn đoán và xem bệnh nhân',
         'permissions': [
             'patient.view',
+            'examination.view', 'examination.create', 'examination.edit', 'examination.delete',
             'diagnosis.view', 'diagnosis.create', 'diagnosis.edit', 'diagnosis.delete',
+            'report.view',
+        ],
+    },
+    {
+        'code': 'receptionist',
+        'name': 'Lễ tân',
+        'description': 'Tiếp nhận và quản lý thông tin bệnh nhân',
+        'permissions': [
+            'patient.view', 'patient.create', 'patient.edit', 'patient.delete',
+            'examination.view', 'examination.create', 'examination.edit', 'examination.delete',
+            'report.view',
+        ],
+    },
+    {
+        'code': 'nurse',
+        'name': 'Điều dưỡng / Y tá',
+        'description': 'Hỗ trợ chăm sóc và theo dõi bệnh nhân',
+        'permissions': [
+            'patient.view',
+            'examination.view', 'examination.create', 'examination.edit', 'examination.delete',
+            'report.view',
+        ],
+    },
+    {
+        'code': 'lab_technician',
+        'name': 'Kỹ thuật viên xét nghiệm',
+        'description': 'Thực hiện và cập nhật kết quả xét nghiệm',
+        'permissions': [
+            'patient.view',
+            'examination.view', 'examination.create', 'examination.edit', 'examination.delete',
+            'report.view',
+        ],
+    },
+    {
+        'code': 'pharmacist',
+        'name': 'Dược sĩ',
+        'description': 'Xem thông tin bệnh nhân và chỉ định điều trị',
+        'permissions': [
+            'patient.view',
+            'examination.view',
+            'report.view',
+        ],
+    },
+    {
+        'code': 'patient',
+        'name': 'Bệnh nhân',
+        'description': 'Tài khoản bệnh nhân, truy cập giới hạn',
+        'permissions': [
+            'diagnosis.view',
         ],
     },
 ]

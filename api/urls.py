@@ -2,7 +2,7 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
-    path('', lambda request: redirect('login'), name='root_redirect'),
+    path('', lambda request: redirect('patient_login'), name='root_redirect'),
     path('facilities/', facility_list, name='facility_list'),
     path('services/', service_list, name='service_list'),
     path('reports/', report_list, name='report_list'),
