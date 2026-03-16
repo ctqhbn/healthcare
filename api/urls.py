@@ -19,6 +19,8 @@ urlpatterns = [
     path('lookup/login/', patient_login_view, name='patient_login'),
     path('lookup/logout/', patient_logout_view, name='patient_logout'),
     path('lookup/', patient_dashboard, name='patient_dashboard'),
+    path('lookup/my-results/', patient_my_results, name='patient_my_results'),
+    path('lookup/my-results/<int:pk>/', patient_my_result_detail, name='patient_my_result_detail'),
     path('api/patient-lookup/', patient_lookup_api, name='patient_lookup_api'),
 
     path('api/facilities/<int:pk>/', get_facility, name='get_facility'),

@@ -41,7 +41,7 @@
             <td>{{ u.facility.name|default:"" }}</td>
             <td>
                 <button class="btn-action btn-action-edit" data-bs-toggle="modal" data-bs-target="#userModal"
-                    onclick="openEditModal('{{ u.id }}', '{{ u.code }}', '{{ u.username }}', '{{ u.name }}', '{{ u.role.id|default:"" }}', '{{ u.facility.id|default:"" }}')">
+                    onclick="openEditModal('{{ u.id }}', '{{ u.code }}', '{{ u.username }}', '{{ u.name }}', '{{ u.role.id|default:'' }}', '{{ u.facility.id|default:'' }}', '{{ u.patient.id|default:'' }}')">
                     Sửa
                 </button>
                 <button class="btn-action btn-action-delete" onclick="deleteUser('{{ u.id }}')">Xóa</button>
@@ -88,6 +88,14 @@
               <option value="{{ r.id }}">{{ r.name }}</option>
               {% endfor %}
             </select>
+          </div>          <div class="mb-3" id="patient-field" style="display:none;">
+            <label for="user-patient" class="form-label">Bệnh nhân (CCCD/BHYT/SĐT)</label>
+            <select class="form-select" id="user-patient" name="patient">
+              <option value="">-- Chọn bệnh nhân --</option>
+              {% for p in patients %}
+              <option value="{{ p.id }}" data-name="{{ p.name }}" data-in-use="{{ p.user.id|default:'' }}">{{ p.identifier }} — {{ p.name }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="mb-3">
             <label for="user-facility" class="form-label">Cơ sở y tế</label>
@@ -128,22 +136,82 @@ $(document).ready(function () {
     });
 });
 
+const patientRoleId = '{{ patient_role_id }}';
+
 function openCreateModal() {
     $('#userForm')[0].reset();
     $('#user-id').val('');
+    $('#user-patient').val('');
+    setEditLocks(false);
+    applyRoleBehavior();
+    filterPatientOptionsForEdit(null);
     $('#userModalLabel').text('Thêm người dùng');
 }
 
-function openEditModal(id, code, username, name, role, facility) {
+function openEditModal(id, code, username, name, role, facility, patientId) {
     $('#user-id').val(id);
     $('#user-code').val(code);
     $('#user-username').val(username);
     $('#user-password').val('');
     $('#user-name').val(name);
     $('#user-role').val(role);
+    filterPatientOptionsForEdit(patientId);
+    $('#user-patient').val(patientId);
+    setEditLocks(role === patientRoleId);
+    applyRoleBehavior();
     $('#user-facility').val(facility);
     $('#userModalLabel').text('Cập nhật người dùng');
 }
+
+function syncNameFromPatient() {
+    const selected = $('#user-patient option:selected');
+    const patientName = selected.data('name');
+    if (patientName) {
+        $('#user-name').val(patientName);
+    }
+}
+
+function filterPatientOptionsForEdit(currentId) {
+    $('#user-patient option').each(function() {
+        const inUse = $(this).data('in-use');
+        const isCurrent = currentId && String(inUse) === String(currentId);
+        if (inUse && !isCurrent) {
+            $(this).prop('disabled', true).hide();
+        } else {
+            $(this).prop('disabled', false).show();
+        }
+    });
+    if (!currentId) {
+        $('#user-patient').val('');
+    }
+}
+
+function setEditLocks(isPatientRole) {
+    $('#user-role').prop('disabled', isPatientRole);
+    $('#user-patient').prop('disabled', isPatientRole);
+}
+
+function applyRoleBehavior() {
+    const isPatient = $('#user-role').val() === patientRoleId;
+    if (isPatient) {
+        $('#patient-field').show();
+        $('#user-patient').prop('required', true);
+        $('#user-name').prop('readonly', true).addClass('bg-gray-50');
+        syncNameFromPatient();
+    } else {
+        $('#patient-field').hide();
+        $('#user-patient').prop('required', false).val('');
+        $('#user-name').prop('readonly', false).removeClass('bg-gray-50');
+    }
+}
+
+$('#user-role').on('change', function() {
+    applyRoleBehavior();
+});
+
+$('#user-patient').on('change', function() {
+    syncNameFromPatient();
+});
 
 $('#userForm').submit(function(e){
     e.preventDefault();
@@ -156,6 +224,7 @@ $('#userForm').submit(function(e){
         password: $('#user-password').val(),
         name: $('#user-name').val(),
         role: $('#user-role').val(),
+        patient: $('#user-patient').val(),
         facility: $('#user-facility').val()
     };
 
@@ -191,3 +260,26 @@ function deleteUser(id) {
 }
 </script>
 {% endblock %}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -60,15 +60,19 @@ def report_list(request):
 
 @admin_required
 def user_list(request):
-    users = User.objects.select_related('facility', 'role').all()
+    users = User.objects.select_related('facility', 'role', 'patient').all()
     facilities = MedicalFacility.objects.all()
     roles = Role.objects.all()
+    patients = Patient.objects.select_related('user').order_by('identifier')
+    patient_role = Role.objects.filter(code='patient').first()
     return render(request, 'user_list.html', {
         'users': users,
         'tab': 'users',
         'subtab': 'users',
         'facilities': facilities,
         'roles': roles,
+        'patients': patients,
+        'patient_role_id': patient_role.id if patient_role else '',
     })
 
 
@@ -528,6 +532,8 @@ def patient_lookup_api(request):
 
 def patient_login_view(request):
     if request.user.is_authenticated:
+        if request.user.role_code == 'patient':
+            return redirect('patient_my_results')
         return redirect('patient_dashboard')
     if request.method == 'POST':
         username = request.POST.get('username')
@@ -535,6 +541,8 @@ def patient_login_view(request):
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
+            if user.role_code == 'patient':
+                return redirect('patient_my_results')
             return redirect('patient_dashboard')
         else:
             return render(request, 'patient_login.html', {'error': 'Tài khoản hoặc mật khẩu không đúng.'})
@@ -550,6 +558,61 @@ def patient_dashboard(request):
     if not request.user.is_authenticated:
         return redirect('patient_login')
     return render(request, 'patient_lookup.html', {'tab': 'lookup'})
+
+
+def patient_my_results(request):
+    if not request.user.is_authenticated:
+        return redirect('patient_login')
+
+    patient = getattr(request.user, 'patient', None)
+    if not patient:
+        identifiers = [request.user.username, request.user.code]
+        identifiers = [i for i in identifiers if i]
+        patient = Patient.objects.filter(identifier__in=identifiers).first() if identifiers else None
+
+    examinations = []
+    if patient:
+        examinations = MedicalExamination.objects.filter(patient=patient).select_related(
+            'facility', 'doctor'
+        ).order_by('-examination_date')
+
+    return render(request, 'patient_my_results.html', {
+        'tab': 'my_results',
+        'patient': patient,
+        'examinations': examinations,
+    })
+
+
+def patient_my_result_detail(request, pk):
+    if not request.user.is_authenticated:
+        return redirect('patient_login')
+
+    patient = getattr(request.user, 'patient', None)
+    if not patient:
+        identifiers = [request.user.username, request.user.code]
+        identifiers = [i for i in identifiers if i]
+        patient = Patient.objects.filter(identifier__in=identifiers).first() if identifiers else None
+
+    exam = MedicalExamination.objects.select_related(
+        'patient', 'facility', 'doctor'
+    ).get(pk=pk)
+
+    if not patient or exam.patient_id != patient.id:
+        return redirect('patient_my_results')
+
+    services = ExaminationService.objects.filter(examination=exam).select_related(
+        'service', 'assigned_doctor'
+    ).prefetch_related('documents')
+    overall_docs = ExaminationDocument.objects.filter(examination=exam)
+    consults = ExaminationConsult.objects.filter(examination=exam).select_related('doctor')
+
+    return render(request, 'patient_exam_detail.html', {
+        'tab': 'my_results',
+        'examination': exam,
+        'services': services,
+        'overall_docs': overall_docs,
+        'consults': consults,
+    })
 
 
 @csrf_exempt
@@ -685,13 +748,22 @@ def create_user(request):
         try:
             data = json.loads(request.body)
             role = Role.objects.get(pk=data['role']) if data.get('role') else None
+            patient = None
+            if role and role.code == 'patient':
+                patient_id = data.get('patient') or user.patient_id
+                if not patient_id:
+                    return JsonResponse({'error': 'Vui lòng chọn bệnh nhân cho tài khoản này.'}, status=400)
+                patient = Patient.objects.get(pk=patient_id)
+                if User.objects.filter(patient=patient).exists():
+                    return JsonResponse({'error': 'Bệnh nhân này đã có tài khoản.'}, status=400)
             user = User(
                 code=data['code'],
                 username=data['username'],
-                name=data['name'],
+                name=patient.name if patient else data['name'],
                 role=role,
                 facility=MedicalFacility.objects.get(pk=data['facility']) if data.get('facility') else None,
-                password=make_password(data['password'])
+                password=make_password(data['password']),
+                patient=patient,
             )
             user.save()
             return JsonResponse({'message': 'Tạo người dùng thành công', 'id': user.id})
@@ -708,8 +780,17 @@ def update_user(request, pk):
             user = User.objects.get(pk=pk)
             user.code = data['code']
             user.username = data['username']
-            user.name = data['name']
             user.role = Role.objects.get(pk=data['role']) if data.get('role') else None
+            patient = None
+            if user.role and user.role.code == 'patient':
+                patient_id = data.get('patient') or user.patient_id
+                if not patient_id:
+                    return JsonResponse({'error': 'Vui lòng chọn bệnh nhân cho tài khoản này.'}, status=400)
+                patient = Patient.objects.get(pk=patient_id)
+                if User.objects.filter(patient=patient).exclude(pk=user.pk).exists():
+                    return JsonResponse({'error': 'Bệnh nhân này đã có tài khoản.'}, status=400)
+            user.patient = patient
+            user.name = patient.name if patient else data['name']
             user.facility = MedicalFacility.objects.get(pk=data['facility']) if data.get('facility') else None
             if data.get('password'):
                 user.password = make_password(data['password'])
@@ -1198,3 +1279,5 @@ def diagnosis_public_view(request, token):
         return render(request, 'diagnosis_public.html', context)
     except DiagnosisRecord.DoesNotExist:
         return HttpResponse("Link không hợp lệ hoặc đã bị thu hồi.", status=404)
+
+
