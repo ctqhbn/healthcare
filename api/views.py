@@ -10,7 +10,7 @@ from api.decorators import admin_required, permission_required
 from api.models import (
     DiagnosisDocument, DiagnosisRecord, MedicalFacility, Patient, PatientDocument,
     Role, Permission, Service, MedicalExamination, ExaminationService,
-    ExaminationDocument, ExaminationServiceDocument
+    ExaminationDocument, ExaminationServiceDocument, ExaminationConsult
 )
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.contrib.auth.hashers import make_password
@@ -134,11 +134,13 @@ def examination_detail(request, pk):
         'service', 'assigned_doctor'
     ).prefetch_related('documents')
     overall_docs = ExaminationDocument.objects.filter(examination=exam)
+    consults = ExaminationConsult.objects.filter(examination=exam).select_related('doctor')
     doctors = User.objects.filter(role__code='doctor')
     return render(request, 'examination_detail.html', {
         'examination': exam,
         'services': services,
         'overall_docs': overall_docs,
+        'consults': consults,
         'doctors': doctors,
         'tab': 'examinations',
     })
@@ -169,6 +171,8 @@ def get_examination(request, pk):
                 'documents': [{'id': d.id, 'file_url': d.file.url, 'file_name': d.original_filename or d.file.name.split('/')[-1]} for d in svc_docs],
             })
 
+        consults = ExaminationConsult.objects.filter(examination=exam).select_related('doctor')
+
         data = {
             'id': exam.id,
             'patient_id': exam.patient.id,
@@ -182,6 +186,7 @@ def get_examination(request, pk):
             'overall_result': exam.overall_result or '',
             'notes': exam.notes or '',
             'services': services_data,
+            'consult_doctors': [c.doctor_id for c in consults],
             'documents': [{'id': d.id, 'file_url': d.file.url, 'file_name': d.original_filename or d.file.name.split('/')[-1], 'document_type': d.document_type} for d in exam_docs],
         }
         return JsonResponse(data)
@@ -212,6 +217,12 @@ def create_examination(request):
                 overall_result=overall_result,
                 notes=notes,
             )
+
+            # Consult doctors (JSON array of ids)
+            consult_json = request.POST.get('consult_doctors', '[]')
+            consult_ids = json.loads(consult_json)
+            for doc_id in consult_ids:
+                ExaminationConsult.objects.get_or_create(examination=exam, doctor_id=doc_id)
 
             # Services (JSON array)
             services_json = request.POST.get('services', '[]')
@@ -267,6 +278,18 @@ def update_examination(request, pk):
             exam.overall_result = request.POST.get('overall_result', '')
             exam.notes = request.POST.get('notes', '')
             exam.save()
+
+            # Update consult doctors list
+            consult_json = request.POST.get('consult_doctors', '[]')
+            consult_ids = set(json.loads(consult_json))
+            existing_consults = ExaminationConsult.objects.filter(examination=exam)
+            existing_ids = set(existing_consults.values_list('doctor_id', flat=True))
+
+            # Remove doctors no longer in list
+            existing_consults.filter(doctor_id__in=(existing_ids - consult_ids)).delete()
+            # Add new doctors
+            for doc_id in (consult_ids - existing_ids):
+                ExaminationConsult.objects.create(examination=exam, doctor_id=doc_id)
 
             # Update services: keep existing, add new, remove unchecked
             services_json = request.POST.get('services', '[]')
@@ -435,6 +458,30 @@ def delete_examination_doc(request, pk):
             return JsonResponse({'message': 'Đã xóa'})
         except ExaminationDocument.DoesNotExist:
             return JsonResponse({'error': 'Không tìm thấy'}, status=404)
+    return HttpResponseBadRequest("Invalid method")
+
+
+@csrf_exempt
+@permission_required('examination.edit')
+def update_examination_consult(request, pk):
+    """
+    Cập nhật kết quả hội chẩn của một bác sĩ cho phiếu khám.
+    - Chỉ cho phép: chính bác sĩ đó hoặc admin.
+    """
+    if request.method == 'POST':
+        try:
+            consult = ExaminationConsult.objects.select_related('doctor').get(pk=pk)
+            user = request.user
+            if user.role_code != 'admin' and consult.doctor_id != user.id:
+                return JsonResponse({'error': 'Không được phép sửa kết quả của bác sĩ khác'}, status=403)
+
+            consult.result = request.POST.get('result', '')
+            consult.save()
+            return JsonResponse({'message': 'Cập nhật kết quả hội chẩn thành công'})
+        except ExaminationConsult.DoesNotExist:
+            return JsonResponse({'error': 'Không tìm thấy bản ghi hội chẩn'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
     return HttpResponseBadRequest("Invalid method")
 
 

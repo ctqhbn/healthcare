@@ -79,6 +79,31 @@
     </div>
 </div>
 
+<!-- Consultation results -->
+{% if consults %}
+<div style="background:#fff; border-radius:16px; padding:20px 24px; border:1px solid #f1f5f9; box-shadow:0 1px 3px rgba(0,0,0,0.04); margin-bottom:20px;">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <h6 style="font-weight:700; color:#1e293b; margin:0; font-size:0.9rem;">Kết quả hội chẩn</h6>
+    </div>
+    {% for c in consults %}
+        <div style="border-top:1px dashed #e2e8f0; padding-top:10px; margin-top:8px;">
+            <div style="font-size:0.8rem; color:#64748b; margin-bottom:4px;">
+                Bác sĩ hội chẩn: <strong style="color:#334155;">{{ c.doctor.name }}</strong>
+                <span style="font-size:0.75rem; color:#94a3b8;">(cập nhật: {{ c.updated_at|date:"d/m/Y H:i" }})</span>
+            </div>
+            {% if request.user.role_code == 'admin' or request.user.id == c.doctor_id %}
+                <textarea class="form-control" id="consultResult_{{ c.id }}" rows="2" style="font-size:0.8rem; border-radius:8px;">{{ c.result|default:"" }}</textarea>
+                <button class="btn-add mt-1" style="padding:4px 14px; font-size:0.75rem;" onclick="saveConsult({{ c.id }})">Lưu kết quả hội chẩn</button>
+            {% else %}
+                <div style="font-size:0.85rem; color:#475569;">
+                    {{ c.result|default:"Chưa có kết quả hội chẩn"|linebreaksbr }}
+                </div>
+            {% endif %}
+        </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <!-- Service list -->
 <h6 style="font-weight:700; color:#1e293b; font-size:0.95rem; margin-bottom:12px;">Danh sách dịch vụ khám ({{ services|length }})</h6>
 
@@ -265,6 +290,22 @@ function saveOverallResult() {
         processData: false,
         contentType: false,
         success: function() { location.reload(); },
+        error: function(xhr) { alert(xhr.responseJSON?.error || 'Có lỗi xảy ra'); }
+    });
+}
+
+function saveConsult(consultId) {
+    const textarea = document.getElementById('consultResult_' + consultId);
+    if (!textarea) return;
+    const formData = new FormData();
+    formData.append('result', textarea.value);
+    $.ajax({
+        url: `/api/examinations/consults/update/${consultId}/`,
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function() { alert('Đã lưu kết quả hội chẩn'); },
         error: function(xhr) { alert(xhr.responseJSON?.error || 'Có lỗi xảy ra'); }
     });
 }

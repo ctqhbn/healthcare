@@ -117,9 +117,21 @@
                             </select>
                         </div>
                         <div class="col-md-4">
+                            <label class="form-label" style="font-size:0.8rem; color:#64748b;">Bác sĩ hội chẩn</label>
+                            <select id="examConsultDoctors" class="form-select" multiple style="font-size:0.85rem; border-radius:10px; height:80px;">
+                                {% for d in doctors %}
+                                <option value="{{ d.id }}">{{ d.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <small style="font-size:0.7rem; color:#94a3b8;">Giữ Ctrl/Cmd để chọn nhiều bác sĩ</small>
+                        </div>
+                        <div class="col-md-4">
                             <label class="form-label" style="font-size:0.8rem; color:#64748b;">Ngày khám <span style="color:red;">*</span></label>
                             <input type="datetime-local" id="examDate" class="form-control" required style="font-size:0.85rem; border-radius:10px;">
                         </div>
+                    </div>
+
+                    <div class="row mb-3">
                         <div class="col-md-4">
                             <label class="form-label" style="font-size:0.8rem; color:#64748b;">Trạng thái</label>
                             <select id="examStatus" class="form-select" style="font-size:0.85rem; border-radius:10px;">
@@ -183,6 +195,7 @@ $(document).ready(function() {
 
 let facilityServices = [];
 let selectedServiceIds = [];
+let selectedConsultDoctorIds = [];
 
 function openCreateExam() {
     document.getElementById('examModalTitle').textContent = 'Tạo phiếu khám';
@@ -207,6 +220,14 @@ function openEditExam(id) {
         document.getElementById('examNotes').value = data.notes;
 
         selectedServiceIds = data.services.map(s => s.service_id);
+        selectedConsultDoctorIds = data.consult_doctors || [];
+
+        // set consult doctors multi-select
+        const consultSelect = document.getElementById('examConsultDoctors');
+        Array.from(consultSelect.options).forEach(opt => {
+            opt.selected = selectedConsultDoctorIds.includes(parseInt(opt.value));
+        });
+
         loadFacilityServices();
 
         new bootstrap.Modal(document.getElementById('examModal')).show();
@@ -266,6 +287,9 @@ function saveExam() {
     formData.append('status', document.getElementById('examStatus').value);
     formData.append('overall_result', '');
     formData.append('notes', document.getElementById('examNotes').value);
+    const consultSelect = document.getElementById('examConsultDoctors');
+    const consultIds = Array.from(consultSelect.selectedOptions).map(o => parseInt(o.value));
+    formData.append('consult_doctors', JSON.stringify(consultIds));
     formData.append('services', JSON.stringify(checkedServices));
 
     const url = id ? `/api/examinations/update/${id}/` : '/api/examinations/create/';

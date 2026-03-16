@@ -193,6 +193,23 @@ class ExaminationServiceDocument(models.Model):
         return f'{self.original_filename}'
 
 
+class ExaminationConsult(models.Model):
+    """
+    Bác sĩ hội chẩn cho một phiếu khám, mỗi bác sĩ có ghi chú/kết quả hội chẩn riêng.
+    """
+    examination = models.ForeignKey(MedicalExamination, on_delete=models.CASCADE, related_name='consults')
+    doctor = models.ForeignKey('User', on_delete=models.CASCADE, related_name='examination_consults')
+    result = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('examination', 'doctor')
+
+    def __str__(self):
+        return f'Hội chẩn {self.examination_id} - {self.doctor.name}'
+
+
 class DiagnosisCatalog(models.Model):
     order_number = models.IntegerField()
     exam_time = models.DateTimeField()

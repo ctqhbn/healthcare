@@ -58,6 +58,7 @@ urlpatterns = [
     path('api/examinations/<int:pk>/overall/', update_examination_overall, name='update_examination_overall'),
     path('api/examinations/<int:pk>/status/', update_examination_status, name='update_examination_status'),
     path('api/examinations/doc/delete/<int:pk>/', delete_examination_doc, name='delete_examination_doc'),
+    path('api/examinations/consults/update/<int:pk>/', update_examination_consult, name='update_examination_consult'),
 
     path('api/diagnosis/create/', create_diagnosis, name='create_diagnosis'),
     path('api/diagnosis/update/<int:id>/', update_diagnosis, name='update_diagnosis'),
