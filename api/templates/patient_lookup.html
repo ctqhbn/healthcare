@@ -1,98 +1,214 @@
-{% extends "patient_base.html" %}
+﻿{% extends "patient_base.html" %}
 {% block title %}Tra cứu kết quả{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+{% endblock %}
 {% block content %}
 
-<h3 class="page-title">Tra cứu kết quả chuẩn đoán</h3>
+<h3 class="page-title">Tra cứu kết quả</h3>
 
 <div style="background:#fff; border-radius:16px; padding:24px; border:1px solid #f1f5f9; box-shadow:0 1px 3px rgba(0,0,0,0.04); margin-bottom:20px;">
-    <div class="d-flex align-items-end gap-3 flex-wrap">
+    <form id="lookupForm" class="d-flex align-items-end gap-3 flex-wrap">
         <div>
-            <label class="form-label" style="font-size:0.8rem; color:#64748b; margin-bottom:2px;">Số định danh (CCCD / BHYT / SĐT)</label>
-            <input type="text" id="identifierInput" class="form-control" placeholder="Nhập số định danh" style="font-size:0.85rem; border-radius:10px; min-width:280px;">
+            <label class="form-label" style="font-size:0.8rem; color:#64748b; margin-bottom:2px;">Cơ sở y tế</label>
+            <select class="form-select" id="facilitySelect" name="facility_id" style="min-width:240px;">
+                <option value="">Tất cả</option>
+                {% for f in facilities %}
+                <option value="{{ f.id }}">{{ f.name }}</option>
+                {% endfor %}
+            </select>
         </div>
         <div>
-            <button class="btn-add" style="padding:9px 24px;" onclick="searchDiagnosis()">Tra cứu</button>
+            <label class="form-label" style="font-size:0.8rem; color:#64748b; margin-bottom:2px;">Bệnh nhân</label>
+            <select class="form-select" id="patientSelect" name="patient_id" style="min-width:320px;">
+                <option value="">-- Chọn bệnh nhân --</option>
+                {% for p in patients %}
+                <option value="{{ p.id }}">{{ p.identifier }} — {{ p.name }}</option>
+                {% endfor %}
+            </select>
         </div>
+        <div>
+            <label class="form-label" style="font-size:0.8rem; color:#64748b; margin-bottom:2px;">Năm</label>
+            <select class="form-select" id="examYear" name="exam_year" style="min-width:140px;">
+                <option value="">Tất cả thời gian</option>
+                {% for y in years %}
+                <option value="{{ y }}">{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label" style="font-size:0.8rem; color:#64748b; margin-bottom:2px;">Tháng</label>
+            <select class="form-select" id="examMonth" name="exam_month" style="min-width:140px;">
+                <option value="">Tất cả</option>
+                <option value="1">Tháng 1</option>
+                <option value="2">Tháng 2</option>
+                <option value="3">Tháng 3</option>
+                <option value="4">Tháng 4</option>
+                <option value="5">Tháng 5</option>
+                <option value="6">Tháng 6</option>
+                <option value="7">Tháng 7</option>
+                <option value="8">Tháng 8</option>
+                <option value="9">Tháng 9</option>
+                <option value="10">Tháng 10</option>
+                <option value="11">Tháng 11</option>
+                <option value="12">Tháng 12</option>
+            </select>
+        </div>
+        <div>
+            <button type="submit" class="btn-add" style="padding:9px 24px;">Tra cứu</button>
+        </div>
+    </form>
+</div>
+
+<div id="resultArea">
+    <div class="table-card">
+        <table id="lookupResultTable" class="table">
+            <thead>
+                <tr>
+                    <th>Thời gian khám</th>
+                    <th>Bệnh nhân</th>
+                    <th>Định danh</th>
+                    <th>Cơ sở</th>
+                    <th>Bác sĩ</th>
+                    <th>Trạng thái</th>
+                    <th>Kết quả tổng</th>
+                    <th>Xem</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
     </div>
 </div>
 
-<div id="resultArea"></div>
+{% endblock %}
 
+{% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script>
-$('#identifierInput').on('keypress', function(e) {
-    if (e.which === 13) searchDiagnosis();
-});
+let lookupTable = null;
 
-function searchDiagnosis() {
-    const identifier = $('#identifierInput').val().trim();
-    if (!identifier) {
-        alert('Vui lòng nhập số định danh');
-        return;
-    }
-
-    $.get('/api/patient-lookup/', { identifier: identifier }, function(response) {
-        const area = $('#resultArea');
-        area.empty();
-
-        if (!response.data || response.data.length === 0) {
-            area.html(`
-                <div class="table-card" style="padding:40px; text-align:center; color:#94a3b8;">
-                    <p style="font-size:0.9rem; margin:0;">Không tìm thấy kết quả cho số định danh này.</p>
-                </div>
-            `);
-            return;
+function initTable() {
+    lookupTable = $('#lookupResultTable').DataTable({
+        searching: false,
+        lengthChange: true,
+        pageLength: 10,
+        language: {
+            emptyTable: "Không có dữ liệu.",
+            lengthMenu: "Hiển thị _MENU_",
+            info: "Hiển thị từ _START_ tới _END_ trong số _TOTAL_ bản ghi",
+            paginate: { previous: "«", next: "»" }
         }
-
-        let html = `
-            <div style="margin-bottom:12px; color:#475569; font-size:0.85rem;">
-                Tìm thấy <strong>${response.data.length}</strong> kết quả cho <strong>${response.patient_name}</strong>
-            </div>
-            <div class="table-card">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Thời gian khám</th>
-                        <th>Loại dịch vụ</th>
-                        <th>Khoa</th>
-                        <th>Nơi khám</th>
-                        <th>Bác sĩ</th>
-                        <th>Kết quả</th>
-                        <th>Chi tiết</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-
-        response.data.forEach(d => {
-            const resultPreview = d.diagnosis_result.length > 50
-                ? d.diagnosis_result.substring(0, 50) + '...'
-                : d.diagnosis_result;
-            html += `
-                <tr>
-                    <td>${d.examination_time}</td>
-                    <td><span class="badge-role badge-role-doctor">${d.service_type}</span></td>
-                    <td>${d.department}</td>
-                    <td>${d.examination_place}</td>
-                    <td>${d.doctor_name}</td>
-                    <td style="max-width:200px;">${resultPreview}</td>
-                    <td>
-                        ${d.public_url
-                            ? `<a href="${d.public_url}" target="_blank" class="btn-action btn-action-info">Xem</a>`
-                            : '<span style="color:#94a3b8; font-size:0.8rem;">—</span>'}
-                    </td>
-                </tr>`;
-        });
-
-        html += '</tbody></table></div>';
-        area.html(html);
-    }).fail(function() {
-        $('#resultArea').html(`
-            <div class="table-card" style="padding:40px; text-align:center; color:#ef4444;">
-                <p style="font-size:0.9rem; margin:0;">Có lỗi xảy ra. Vui lòng thử lại.</p>
-            </div>
-        `);
     });
 }
-</script>
 
+function loadPatientsByFacility() {
+    const facilityId = $('#facilitySelect').val();
+    $.get('/api/patient-lookup/patients/', { facility_id: facilityId }, function(resp){
+        const select = $('#patientSelect');
+        select.empty();
+        select.append('<option value="">-- Chọn bệnh nhân --</option>');
+        (resp.data || []).forEach(p => {
+            select.append(`<option value="${p.id}">${p.identifier} — ${p.name}</option>`);
+        });
+    });
+}
+
+function applyYearMonthRule() {
+    const yearVal = $('#examYear').val();
+    const isAllTime = !yearVal;
+    $('#examMonth').prop('disabled', isAllTime);
+    if (isAllTime) {
+        $('#examMonth').val('');
+    }
+}
+
+$('#facilitySelect').on('change', function(){
+    loadPatientsByFacility();
+});
+
+$('#examYear').on('change', function(){
+    applyYearMonthRule();
+});
+
+$('#lookupForm').on('submit', function(e){
+    e.preventDefault();
+    const params = {
+        facility_id: $('#facilitySelect').val(),
+        patient_id: $('#patientSelect').val(),
+        exam_year: $('#examYear').val(),
+        exam_month: $('#examMonth').val()
+    };
+
+    $.get('/api/patient-lookup/exams/', params, function(resp){
+        const rows = resp.data || [];
+        const tableRows = rows.map(r => {
+            const preview = r.overall_result && r.overall_result.length > 80
+                ? r.overall_result.substring(0, 80) + '...'
+                : (r.overall_result || '');
+            const query = $.param({
+                facility_id: $('#facilitySelect').val(),
+                patient_id: $('#patientSelect').val(),
+                exam_year: $('#examYear').val(),
+                exam_month: $('#examMonth').val()
+            });
+            return [
+                r.examination_time,
+                r.patient_name || '',
+                r.identifier || '',
+                r.facility_name || '',
+                r.doctor_name || '—',
+                r.status || '',
+                `<span style="max-width:260px; display:inline-block;">${preview || 'Chưa có kết quả tổng'}</span>`,
+                `<a class="btn-action btn-action-info" href="/lookup/results/${r.id}/?${query}">Xem</a>`
+            ];
+        });
+        lookupTable.clear().rows.add(tableRows).draw();
+    }).fail(function(){
+        alert('Có lỗi xảy ra. Vui lòng thử lại.');
+    });
+});
+
+$(document).ready(function(){
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('facility_id')) {
+        $('#facilitySelect').val(params.get('facility_id'));
+    }
+    if (params.has('exam_year')) {
+        $('#examYear').val(params.get('exam_year'));
+    }
+    if (params.has('exam_month')) {
+        $('#examMonth').val(params.get('exam_month'));
+    }
+    const now = new Date();
+    const currentYear = String(now.getFullYear());
+    if (!params.has('exam_year') && !$('#examYear').val() && $('#examYear option[value="' + currentYear + '"]').length) {
+        $('#examYear').val(currentYear);
+    }
+    applyYearMonthRule();
+    initTable();
+    loadPatientsByFacility();
+    const presetPatient = params.get('patient_id');
+    if (presetPatient) {
+        const trySetPatient = () => {
+            if ($('#patientSelect option[value="' + presetPatient + '"]').length) {
+                $('#patientSelect').val(presetPatient);
+                $('#lookupForm').trigger('submit');
+                return true;
+            }
+            return false;
+        };
+        if (!trySetPatient()) {
+            const interval = setInterval(() => {
+                if (trySetPatient()) {
+                    clearInterval(interval);
+                }
+            }, 100);
+        }
+    } else {
+        $('#lookupForm').trigger('submit');
+    }
+});
+</script>
 {% endblock %}

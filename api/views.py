@@ -16,6 +16,7 @@ from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.contrib.auth.hashers import make_password
 from django.views.decorators.http import require_GET
 from django.db.models import Count, Sum
+from django.db.models.functions import ExtractMonth, ExtractYear
 from django.utils.dateparse import parse_date
 
 from django.contrib.auth import authenticate, login, logout as auth_logout
@@ -55,7 +56,161 @@ def service_list(request):
 
 @permission_required('report.view')
 def report_list(request):
-    return render(request, 'report_list.html', {'tab': 'reports'})
+    subtab = request.GET.get('tab', 'month')
+    if subtab not in ('month', 'quarter', 'year'):
+        subtab = 'month'
+    context = {'tab': 'reports', 'subtab': subtab}
+
+    if subtab in ('month', 'quarter', 'year'):
+        facilities = MedicalFacility.objects.all().order_by('name')
+        facility_id = request.GET.get('facility_id') or ''
+
+        base_qs = ExaminationService.objects.select_related('examination', 'service')
+        if facility_id:
+            base_qs = base_qs.filter(examination__facility_id=facility_id)
+
+        years = list(
+            base_qs.annotate(y=ExtractYear('examination__examination_date'))
+            .values_list('y', flat=True).distinct().order_by('y')
+        )
+
+        selected_year = request.GET.get('year')
+        if not selected_year and years:
+            selected_year = str(years[-1])
+        elif selected_year and selected_year.isdigit() and int(selected_year) not in years:
+            selected_year = str(years[-1]) if years else ''
+
+        filtered = base_qs
+        if selected_year:
+            filtered = filtered.filter(examination__examination_date__year=int(selected_year))
+        else:
+            filtered = filtered.none()
+
+        if subtab == 'month':
+            monthly_totals = {i: 0 for i in range(1, 13)}
+            monthly_amounts = {i: 0 for i in range(1, 13)}
+            for row in filtered.annotate(m=ExtractMonth('examination__examination_date')).values('m').annotate(c=Count('id')):
+                if row['m']:
+                    monthly_totals[row['m']] = row['c']
+            for row in filtered.annotate(m=ExtractMonth('examination__examination_date')).values('m').annotate(total=Sum('price')):
+                if row['m']:
+                    monthly_amounts[row['m']] = int(row['total'] or 0)
+
+            service_map = {}
+            for row in filtered.annotate(m=ExtractMonth('examination__examination_date')).values('service_id', 'service__name', 'm').annotate(c=Count('id')):
+                if not row['m']:
+                    continue
+                sid = row['service_id']
+                if sid not in service_map:
+                    service_map[sid] = {
+                        'name': row['service__name'],
+                        'months': {i: 0 for i in range(1, 13)}
+                    }
+                service_map[sid]['months'][row['m']] = row['c']
+
+            service_rows = []
+            for sid, info in service_map.items():
+                service_rows.append({
+                    'name': info['name'],
+                    'months': [info['months'][i] for i in range(1, 13)]
+                })
+            service_rows.sort(key=lambda x: x['name'])
+
+            context.update({
+                'facilities': facilities,
+                'selected_facility_id': str(facility_id),
+                'years': years,
+                'selected_year': selected_year or '',
+                'chart_labels_json': json.dumps([f'T{i}' for i in range(1, 13)]),
+                'chart_values_json': json.dumps([monthly_totals[i] for i in range(1, 13)]),
+                'chart_amounts_json': json.dumps([monthly_amounts[i] for i in range(1, 13)]),
+                'service_rows': service_rows,
+            })
+        elif subtab == 'quarter':
+            quarter_totals = {i: 0 for i in range(1, 5)}
+            quarter_amounts = {i: 0 for i in range(1, 5)}
+            for row in filtered.annotate(m=ExtractMonth('examination__examination_date')).values('m').annotate(c=Count('id')):
+                if row['m']:
+                    q = (row['m'] - 1) // 3 + 1
+                    quarter_totals[q] += row['c']
+            for row in filtered.annotate(m=ExtractMonth('examination__examination_date')).values('m').annotate(total=Sum('price')):
+                if row['m']:
+                    q = (row['m'] - 1) // 3 + 1
+                    quarter_amounts[q] += int(row['total'] or 0)
+
+            service_map = {}
+            for row in filtered.annotate(m=ExtractMonth('examination__examination_date')).values('service_id', 'service__name', 'm').annotate(c=Count('id')):
+                if not row['m']:
+                    continue
+                sid = row['service_id']
+                if sid not in service_map:
+                    service_map[sid] = {
+                        'name': row['service__name'],
+                        'quarters': {i: 0 for i in range(1, 5)}
+                    }
+                q = (row['m'] - 1) // 3 + 1
+                service_map[sid]['quarters'][q] += row['c']
+
+            service_rows = []
+            for sid, info in service_map.items():
+                service_rows.append({
+                    'name': info['name'],
+                    'quarters': [info['quarters'][i] for i in range(1, 5)]
+                })
+            service_rows.sort(key=lambda x: x['name'])
+
+            context.update({
+                'facilities': facilities,
+                'selected_facility_id': str(facility_id),
+                'years': years,
+                'selected_year': selected_year or '',
+                'chart_labels_json': json.dumps([f'Q{i}' for i in range(1, 5)]),
+                'chart_values_json': json.dumps([quarter_totals[i] for i in range(1, 5)]),
+                'chart_amounts_json': json.dumps([quarter_amounts[i] for i in range(1, 5)]),
+                'service_rows': service_rows,
+            })
+        else:
+            year_totals = {int(y): 0 for y in years}
+            year_amounts = {int(y): 0 for y in years}
+
+            for row in base_qs.annotate(y=ExtractYear('examination__examination_date')).values('y').annotate(c=Count('id')):
+                if row['y']:
+                    year_totals[int(row['y'])] = row['c']
+            for row in base_qs.annotate(y=ExtractYear('examination__examination_date')).values('y').annotate(total=Sum('price')):
+                if row['y']:
+                    year_amounts[int(row['y'])] = int(row['total'] or 0)
+
+            service_map = {}
+            for row in base_qs.annotate(y=ExtractYear('examination__examination_date')).values('service_id', 'service__name', 'y').annotate(c=Count('id')):
+                if not row['y']:
+                    continue
+                sid = row['service_id']
+                if sid not in service_map:
+                    service_map[sid] = {
+                        'name': row['service__name'],
+                        'years': {int(y): 0 for y in years}
+                    }
+                service_map[sid]['years'][int(row['y'])] = row['c']
+
+            service_rows = []
+            for sid, info in service_map.items():
+                service_rows.append({
+                    'name': info['name'],
+                    'years': [info['years'][int(y)] for y in years]
+                })
+            service_rows.sort(key=lambda x: x['name'])
+
+            context.update({
+                'facilities': facilities,
+                'selected_facility_id': str(facility_id),
+                'years': years,
+                'chart_labels_json': json.dumps([str(y) for y in years]),
+                'chart_values_json': json.dumps([year_totals[int(y)] for y in years]),
+                'chart_amounts_json': json.dumps([year_amounts[int(y)] for y in years]),
+                'service_rows': service_rows,
+            })
+
+    return render(request, 'report_list.html', context)
 
 
 @admin_required
@@ -530,6 +685,52 @@ def patient_lookup_api(request):
     return JsonResponse({'data': data, 'patient_name': patient.name})
 
 
+@login_required
+def patient_lookup_patients_api(request):
+    facility_id = request.GET.get('facility_id')
+    qs = Patient.objects.all().order_by('identifier', 'name')
+    if facility_id:
+        qs = qs.filter(examinations__facility_id=facility_id).distinct()
+    data = [{'id': p.id, 'name': p.name, 'identifier': p.identifier} for p in qs]
+    return JsonResponse({'data': data})
+
+
+@login_required
+def patient_lookup_exams_api(request):
+    facility_id = request.GET.get('facility_id')
+    patient_id = request.GET.get('patient_id')
+    exam_year = request.GET.get('exam_year')
+    exam_month = request.GET.get('exam_month')
+
+    qs = MedicalExamination.objects.select_related('facility', 'doctor', 'patient')
+    if facility_id:
+        qs = qs.filter(facility_id=facility_id)
+    if patient_id:
+        qs = qs.filter(patient_id=patient_id)
+    if exam_year and exam_year.isdigit():
+        qs = qs.filter(examination_date__year=int(exam_year))
+        if exam_month and exam_month.isdigit():
+            qs = qs.filter(examination_date__month=int(exam_month))
+
+    qs = qs.order_by('-examination_date')
+    status_map = dict(MedicalExamination.STATUS_CHOICES)
+
+    data = []
+    for e in qs:
+        data.append({
+            'id': e.id,
+            'examination_time': e.examination_date.strftime('%d/%m/%Y %H:%M'),
+            'patient_name': e.patient.name if e.patient else '',
+            'identifier': e.patient.identifier if e.patient else '',
+            'facility_name': e.facility.name if e.facility else '',
+            'doctor_name': e.doctor.name if e.doctor else '',
+            'status': status_map.get(e.status, e.status),
+            'overall_result': e.overall_result or '',
+        })
+
+    return JsonResponse({'data': data})
+
+
 def patient_login_view(request):
     if request.user.is_authenticated:
         if request.user.role_code == 'patient':
@@ -557,7 +758,18 @@ def patient_logout_view(request):
 def patient_dashboard(request):
     if not request.user.is_authenticated:
         return redirect('patient_login')
-    return render(request, 'patient_lookup.html', {'tab': 'lookup'})
+    facilities = MedicalFacility.objects.filter(examinations__isnull=False).distinct().order_by('name')
+    patients = Patient.objects.none()
+    years = list(
+        MedicalExamination.objects.annotate(y=ExtractYear('examination_date'))
+        .values_list('y', flat=True).distinct().order_by('y')
+    )
+    return render(request, 'patient_lookup.html', {
+        'tab': 'lookup',
+        'facilities': facilities,
+        'patients': patients,
+        'years': years,
+    })
 
 
 def patient_my_results(request):
@@ -608,6 +820,38 @@ def patient_my_result_detail(request, pk):
 
     return render(request, 'patient_exam_detail.html', {
         'tab': 'my_results',
+        'examination': exam,
+        'services': services,
+        'overall_docs': overall_docs,
+        'consults': consults,
+    })
+
+
+def patient_lookup_result_detail(request, pk):
+    if not request.user.is_authenticated:
+        return redirect('patient_login')
+
+    exam = MedicalExamination.objects.select_related(
+        'patient', 'facility', 'doctor'
+    ).get(pk=pk)
+
+    if request.user.role_code == 'patient':
+        patient = getattr(request.user, 'patient', None)
+        if not patient:
+            identifiers = [request.user.username, request.user.code]
+            identifiers = [i for i in identifiers if i]
+            patient = Patient.objects.filter(identifier__in=identifiers).first() if identifiers else None
+        if not patient or exam.patient_id != patient.id:
+            return redirect('patient_dashboard')
+
+    services = ExaminationService.objects.filter(examination=exam).select_related(
+        'service', 'assigned_doctor'
+    ).prefetch_related('documents')
+    overall_docs = ExaminationDocument.objects.filter(examination=exam)
+    consults = ExaminationConsult.objects.filter(examination=exam).select_related('doctor')
+
+    return render(request, 'patient_lookup_detail.html', {
+        'tab': 'lookup',
         'examination': exam,
         'services': services,
         'overall_docs': overall_docs,
