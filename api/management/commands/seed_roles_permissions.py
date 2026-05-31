@@ -42,12 +42,10 @@ ROLES_DATA = [
     {
         'code': 'doctor',
         'name': 'Bác sĩ',
-        'description': 'Quản lý khám chữa bệnh, chuẩn đoán và xem bệnh nhân',
+        'description': 'Quản lý khám chữa bệnh và xem bệnh nhân',
         'permissions': [
             'patient.view',
             'examination.view', 'examination.create', 'examination.edit', 'examination.delete',
-            'diagnosis.view', 'diagnosis.create', 'diagnosis.edit', 'diagnosis.delete',
-            'report.view',
         ],
     },
     {
