@@ -44,7 +44,7 @@ ROLES_DATA = [
         'name': 'Bác sĩ',
         'description': 'Quản lý khám chữa bệnh và xem bệnh nhân',
         'permissions': [
-            'patient.view',
+            'patient.view', 'patient.create', 'patient.edit', 'patient.delete',
             'examination.view', 'examination.create', 'examination.edit', 'examination.delete',
         ],
     },
